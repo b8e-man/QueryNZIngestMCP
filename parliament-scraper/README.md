@@ -8,9 +8,12 @@ Forward + historical capture of parliament.nz records. Record level, raw only.
    tail diff + Hansard daily PDFs (tier 1, WAF-exempt) + budgeted tier-2 page
    capture + `scrape_records.py` current-records diff (WQ/bills/diaries).
 2. **API queue** (`scripts/parliament_api_queue.sh`, every 5m): drains the
-   POST corpora — questions 683K (full Q+A texts), ur-debates 125 pages,
-   estimates 54, SOPs 114, books 775, bills 92. Cursor state in
-   `api_queue_state.json`; output `data/api_queue/{corpus}.jsonl`.
+   POST corpora — questions 683K (full Q+A texts), ur-debates 333K,
+   estimates, SOPs, books, bills 92. **OFFSET CAP: the API 500s on any
+   query past offset ~100,100 regardless of page size** — corpora over the
+   cap are drained year-sharded via dateFrom/dateTo (verified filter),
+   deduped by record id. Cursor state in `api_queue_state.json`; output
+   `data/api_queue/{corpus}.jsonl`.
    Bills require the FULL SPA body shape (simple `{"page","pageSize"}` is
    rejected with totalResults -1).
 3. **Wayback historical** (`scripts/parliament_wayback.sh`, every 5m +

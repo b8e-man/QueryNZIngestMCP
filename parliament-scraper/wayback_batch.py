@@ -72,9 +72,6 @@ def main():
                     print(f"wayback batch doc failed {futs[fut]}: {e}"[:150],
                           file=sys.stderr)
 
-    if processed == 0:
-        print("wayback batch: time budget exhausted before any doc", file=sys.stderr)
-        sys.exit(1)
     sys.exit(0)
 
 

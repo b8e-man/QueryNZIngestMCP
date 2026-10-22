@@ -1,30 +1,28 @@
 #!/usr/bin/env python3
 """Parliament API queue processor — drains the POST-endpoint corpora.
 
-Corpora (all paginated POST /api/data/search[/{corpus}]):
-  questions  683,552 written Q&As (also captured forward by scrape_records)
-  ur-debates 125 | estimates-of-appropriations 54 | SOPs 114 | books 775
-  bills      92 current bills (REQUIRES the full SPA body shape)
+Corpora (paginated POST /api/data/search[/{corpus}]):
+  questions  683,552 written Q&As (full questionText + replyText)
+  ur-debates 333K | estimates | SOPs | books | bills 92 (full SPA body shape)
 
-Record level. Chunky metadata already in rows; full texts for WQ (questionText
-+ replyText). Written to /opt/data/parliament-scraper/data/api_queue/{corpus}.jsonl.
+OFFSET CAP (learned 2026-10-22): the API 500s on any query past offset
+~100,100 regardless of page size — plain pagination cannot reach the rest.
+Workaround: year sharding via dateFrom/dateTo (verified: 2010 -> 38,963).
+Any corpus whose total exceeds the cap is automatically drained year by year;
+oversized years would split monthly (none expected). Records already captured
+are deduped by record id.
 
-Burn resilience (Radware bans the IP at TCP level under burst — learned
-2026-10-22):
-  * 0.8s polite delay between requests
-  * cursor state per corpus in api_queue_state.json — ticks resume mid-corpus
-  * connection failures: 3 retries with backoff (30/120/300s), then switch to
-    the IPRoyal proxy for the rest of the run
-  * totalResults==-1 = wrong shape or soft block -> treat as failure
-  * --time-budget keeps the run inside the 120s cron-kill window
-Exit: silent 0 on progress; stderr + 1 on repeated failure.
+Burn resilience: 0.8s polite delay; per-corpus cursor state in
+api_queue_state.json; retries with backoff (30/120/300s) then proxy fallback;
+--time-budget keeps runs inside the 120s cron-kill window (budget exhaustion
+is a NORMAL tick end, silent exit 0). Alerts only after 3 consecutive failed
+ticks. Output: data/api_queue/{corpus}.jsonl. Silent on success.
 """
 
 import argparse
 import base64
 import json
 import os
-import random
 import secrets
 import sys
 import time
@@ -35,9 +33,10 @@ import requests
 BASE = "/opt/data/parliament-scraper"
 OUT_DIR = os.path.join(BASE, "data", "api_queue")
 STATE_F = os.path.join(BASE, "api_queue_state.json")
-PROXY_F = "/opt/data/beehive-scraper/proxy.json"
-UA = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
+PROXY_F= "/opt/data/beehive-scraper/proxy.json"
 SLEEP = 0.8
+UA = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
+OFFSET_CAP = 90000          # stay under the ~100,100 hard server cap
 
 BILLS_SHAPE = {
     "id": None, "documentPreset": 1, "keyword": None, "selectCommittee": None,
@@ -50,7 +49,6 @@ BILLS_SHAPE = {
 }
 
 CORPORA = [
-    # (name, url, items_key, total_key, full_shape)
     ("questions", "https://questions.parliament.nz/api/data/search",
      "value", "@odata.count", False),
     ("bills", "https://bills.parliament.nz/api/data/search",
@@ -66,6 +64,8 @@ CORPORA = [
      "results", "totalResults", False),
 ]
 
+YEAR_SHARDS = [(f"{y}-01-01", f"{y}-12-31") for y in range(2026, 1989, -1)]
+
 
 def get_proxy():
     cfg = json.load(open(PROXY_F))
@@ -75,6 +75,10 @@ def get_proxy():
     user = base64.b64decode(cfg["username_b64"]).decode()
     return {"http": f"http://{user}:{pw}@geo.iproyal.com:12321",
             "https": f"http://{user}:{pw}@geo.iproyal.com:12321"}
+
+
+class BudgetExhausted(Exception):
+    """Time budget ran out mid-retry — normal tick end, NOT a failure."""
 
 
 class Fetcher:
@@ -88,7 +92,7 @@ class Fetcher:
         for attempt, backoff in enumerate((0, 30, 120, 300)):
             if backoff:
                 if deadline and time.time() + backoff > deadline:
-                    raise RuntimeError(f"budget exhausted (last: {last_err})")
+                    raise BudgetExhausted(f"tick budget ended mid-retry (last: {last_err})")
                 time.sleep(backoff)
             try:
                 proxies = get_proxy() if self.use_proxy else None
@@ -103,6 +107,20 @@ class Fetcher:
         raise RuntimeError(last_err)
 
 
+def load_seen(corpus):
+    """Record ids already captured — shards overlap the unsharded prefix."""
+    seen = set()
+    path = os.path.join(OUT_DIR, f"{corpus}.jsonl")
+    if os.path.exists(path):
+        with open(path) as f:
+            for line in f:
+                try:
+                    seen.add(json.loads(line).get("id"))
+                except Exception:
+                    pass
+    return seen
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--time-budget", type=int, default=95)
@@ -115,56 +133,95 @@ def main():
 
     fetcher = Fetcher()
     t0 = time.time()
+    deadline = t0 + args.time_budget
     report = []
     hard_fail = False
 
     for name, url, items_key, total_key, full_shape in CORPORA:
-        if time.time() - t0 > args.time_budget:
+        if time.time() > deadline:
             break
-        deadline = t0 + args.time_budget
+        cstate = state.get(name, {})
+        total = cstate.get("total")
         out_f = os.path.join(OUT_DIR, f"{name}.jsonl")
-        done_pages = state.get(name, {}).get("pages_done", 0)
-        total = state.get(name, {}).get("total")
-        page = done_pages + 1
-        got = 0
-        while time.time() - t0 < args.time_budget:
-            body = dict(BILLS_SHAPE) if full_shape else {}
-            body.update({"pageSize": 100, "page": page})
+
+        # discover total + shard plan on first touch
+        if total is None:
+            probe = dict(BILLS_SHAPE) if full_shape else {}
+            probe.update({"pageSize": 1, "page": 1})
             try:
-                resp = fetcher.post(url, body, deadline)
+                resp = fetcher.post(url, probe, deadline)
+            except BudgetExhausted as e:
+                report.append(f"{name}: {e}")
+                break
             except RuntimeError as e:
                 hard_fail = True
-                report.append(f"{name}: fetch failed at page {page}: {e}")
-                break
-            if total is None:
-                total = resp.get(total_key, 0)
-                if total in (None, -1):
-                    hard_fail = True
-                    report.append(f"{name}: bad total {resp.get(total_key)!r}")
-                    break
-            items = resp.get(items_key) or []
-            if not items:
-                break
-            with open(out_f, "a") as f:
-                for it in items:
-                    it["_corpus"] = name
-                    it["_fetched_at"] = datetime.now(timezone.utc).isoformat(
-                        timespec="seconds")
-                    f.write(json.dumps(it, ensure_ascii=False) + "\n")
-            got += len(items)
-            page += 1
-            state[name] = {"pages_done": page - 1, "total": total}
-            with open(STATE_F, "w") as f:
-                json.dump(state, f)
-            if len(items) < 100:
-                break
-            time.sleep(SLEEP)
-        if got:
-            report.append(f"{name}: +{got} records (page {done_pages+1}..{page-1} of ~{total})")
+                report.append(f"{name}: probe failed: {e}")
+                continue
+            total = resp.get(total_key, 0)
+            if not total or total == -1:
+                hard_fail = True
+                report.append(f"{name}: bad total {resp.get(total_key)!r}")
+                continue
+            cstate["total"] = total
+            cstate["shards"] = {}
+            state[name] = cstate
 
+        if not cstate.get("shards"):
+            cstate["shards"] = ({"__all__": 0} if total <= OFFSET_CAP
+                                else {f"{a}..{b}": 0 for a, b in YEAR_SHARDS})
+            state[name] = cstate
+
+        seen = load_seen(name)
+        got = 0
+        shard_list = list(cstate["shards"].items())
+        for label, pages_done in shard_list:
+            if time.time() > deadline:
+                break
+            body = dict(BILLS_SHAPE) if full_shape else {}
+            if label != "__all__":
+                a, b = label.split("..")
+                body.update({"dateFrom": a, "dateTo": b})
+            page = pages_done + 1
+            while time.time() < deadline:
+                body.update({"pageSize": 100, "page": page})
+                try:
+                    resp = fetcher.post(url, body, deadline)
+                except BudgetExhausted as e:
+                    report.append(f"{name}[{label}]: {e}")
+                    break
+                except RuntimeError as e:
+                    hard_fail = True
+                    report.append(f"{name}[{label}]: fetch failed at page {page}: {e}")
+                    break
+                items = resp.get(items_key) or []
+                if not items:
+                    break
+                with open(out_f, "a") as f:
+                    for it in items:
+                        if it.get("id") in seen:
+                            continue
+                        seen.add(it.get("id"))
+                        it["_corpus"] = name
+                        it["_shard"] = label
+                        it["_fetched_at"] = datetime.now(timezone.utc).isoformat(
+                            timespec="seconds")
+                        f.write(json.dumps(it, ensure_ascii=False) + "\n")
+                        got += 1
+                cstate["shards"][label] = page
+                with open(STATE_F, "w") as f:
+                    json.dump(state, f)
+                if len(items) < 100:
+                    break
+                page += 1
+                time.sleep(SLEEP)
+        if got:
+            report.append(f"{name}: +{got} records (total {total})")
+
+    state["_consecutive_failures"] = (state.get("_consecutive_failures", 0) + 1
+                                      if hard_fail else 0)
     with open(STATE_F, "w") as f:
         json.dump(state, f)
-    if hard_fail:
+    if hard_fail and state["_consecutive_failures"] >= 3:
         print("parliament api queue: " + "; ".join(report), file=sys.stderr)
         sys.exit(1)
     sys.exit(0)
