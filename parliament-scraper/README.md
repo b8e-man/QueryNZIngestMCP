@@ -48,7 +48,10 @@ Forward + historical capture of parliament.nz records. Record level, raw only.
 
 ## Git note
 
-The GitHub repo b8e-man/parliament-scraper was pushed from a machine with
-SSH keys (commit 92c1721). This runtime has no GitHub credentials — files
-here are the live versions the crons execute; sync them when credentials are
-available.
+Canonical repo: **github.com/b8e-man/QueryNZIngestMCP** (this code lives in
+its `parliament-scraper/` subdir). This directory is the live execution copy
+the crons run from — intentionally NOT a git checkout. After editing code
+here, run `bash push_to_github.sh` to commit+push (standing git rule).
+Credential store: /opt/data/shared/.gitcreds (600). The fine-grained PAT
+cannot delete or push repos outside its access list — new repos must be
+added to the PAT's selection before it can manage them.
