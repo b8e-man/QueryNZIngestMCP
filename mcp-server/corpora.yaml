@@ -1,0 +1,84 @@
+# Query NZ Ingest MCP — control plane (declarative).
+# Corpora are mounted here; the server reads this file, never hardcodes data paths.
+# Per IDEA-001: thresholds are first-class and auditable — every minted corpus
+# records what it excluded and why.
+
+server:
+  host: 127.0.0.1
+  port: 8646
+  streamable_http_path: /mcp
+
+measure:
+  # Slider A generalised (IDEA-001 §3): prior strength for the informative
+  # Dirichlet prior in salience. High = distrust small corpora (stable).
+  prior_strength: 200.0
+  # Slider B: per-source-category judgement weights. NOT derivable from data —
+  # a human judgement layer, always surfaced in output as `judgement_weight`.
+  source_weights: {}
+  low_n_docs: 5          # cells under this doc count are flagged, never hidden
+  rate_per: 10000        # rate = occurrences per N corpus words
+
+corpora:
+  beehive:
+    label: "Beehive releases, speeches, features"
+    source_category: government-communications
+    kind: docs
+    id_field: url
+    date_field: published_at
+    title_field: title
+    extracted_file: /opt/data/beehive-scraper/extracted.jsonl
+    captures_file: /opt/data/beehive-scraper/done.jsonl
+    pages_dir: /opt/data/beehive-scraper/data/pages
+    freshness_sla_hours: 24
+
+  parliament-wayback:
+    label: "Parliament.nz pages via Wayback (historical)"
+    source_category: web-archive
+    kind: docs
+    id_field: url
+    date_field: ts
+    title_field: html_title
+    extracted_file: /opt/data/parliament-scraper/data/wayback_docs/documents.jsonl
+    captures_file: /opt/data/parliament-scraper/data/wayback_docs/manifest.jsonl
+    pages_dir: /opt/data/parliament-scraper/data/wayback_docs/pages
+    freshness_sla_hours: 168
+
+  parliament-written-questions:
+    label: "Parliament written questions (API queue)"
+    source_category: parliamentary-record
+    kind: records
+    id_field: id
+    date_field: lastModified
+    title_field: ministerialDisplayName
+    record_file: /opt/data/parliament-scraper/data/api_queue/questions.jsonl
+    freshness_sla_hours: 24
+
+  parliament-bills:
+    label: "Parliament bills (API queue)"
+    source_category: parliamentary-record
+    kind: records
+    id_field: billNumber
+    date_field: date
+    title_field: billTitle
+    record_file: /opt/data/parliament-scraper/data/bills_records.jsonl
+    freshness_sla_hours: 24
+
+  parliament-diaries:
+    label: "Ministers' diaries (meetings)"
+    source_category: ministerial-diary
+    kind: records
+    id_field: rowid
+    date_field: date
+    title_field: meeting
+    record_file: /opt/data/parliament-scraper/data/diaries_records.jsonl
+    freshness_sla_hours: 72
+
+  parliament-hansard-index:
+    label: "Hansard PDF index (parliament.nz)"
+    source_category: parliamentary-record
+    kind: records
+    id_field: url
+    date_field: lastmod
+    title_field: url
+    record_file: /opt/data/parliament-scraper/data/pb_index.jsonl
+    freshness_sla_hours: 24
