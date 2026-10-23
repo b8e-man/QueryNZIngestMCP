@@ -14,7 +14,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ingest_wayback_docs import ingest, OUT  # noqa: E402
+from ingest_wayback_docs import ingest, OUT, BudgetExceeded  # noqa: E402
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 QUEUE_F = os.path.join(BASE, "wayback_queue.jsonl")
@@ -29,6 +29,7 @@ def main():
     args = ap.parse_args()
 
     done = set()
+    attempts = {}
     if os.path.exists(MANIFEST_F):
         with open(MANIFEST_F) as f:
             for line in f:
@@ -36,6 +37,8 @@ def main():
                     r = json.loads(line)
                     if r.get("kind") == "doc":
                         done.add(r["url"])
+                    elif r.get("kind") == "attempt":
+                        attempts[r["url"]] = attempts.get(r["url"], 0) + 1
                 except Exception:
                     pass
 
@@ -45,7 +48,7 @@ def main():
             for line in f:
                 try:
                     u = json.loads(line)["url"]
-                    if u not in done:
+                    if u not in done and attempts.get(u, 0) < 2:
                         batch.append(u)
                 except Exception:
                     pass
@@ -53,25 +56,37 @@ def main():
         sys.exit(0)
 
     batch = batch[:args.limit]
-    t0 = time.time()
+    deadline = time.time() + args.time_budget
     processed = 0
+    gen_fail = 0
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    with ThreadPoolExecutor(max_workers=args.workers) as ex:
+    ex = ThreadPoolExecutor(max_workers=args.workers)
+    try:
         i = 0
         while i < len(batch):
-            if time.time() - t0 > args.time_budget:
+            remaining = deadline - time.time()
+            if remaining <= 2:
                 break
             wave = batch[i:i + args.workers]
             i += args.workers
-            futs = {ex.submit(ingest, [u]): u for u in wave}
-            for fut in as_completed(futs):
-                try:
-                    fut.result()
-                    processed += 1
-                except Exception as e:
-                    print(f"wayback batch doc failed {futs[fut]}: {e}"[:150],
-                          file=sys.stderr)
+            futs = {ex.submit(ingest, [u], deadline=deadline): u for u in wave}
+            try:
+                for fut in as_completed(futs, timeout=max(2, remaining)):
+                    try:
+                        fut.result()
+                        processed += 1
+                    except BudgetExceeded:
+                        break     # budget gone mid-wave; resume next tick
+                    except Exception:
+                        gen_fail += 1   # genuine doc failure; URL retries capped
+            except TimeoutError:
+                break
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
 
+    if gen_fail >= 3:
+        print(f"wayback batch: {gen_fail} docs failed after retries", file=sys.stderr)
+        sys.exit(1)
     sys.exit(0)
 
 

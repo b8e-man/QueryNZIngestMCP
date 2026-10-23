@@ -64,17 +64,24 @@ def decompress(body):
     return body
 
 
-def snapshots(url):
+class BudgetExceeded(BaseException):
+    """Tick budget exhausted — unwind past `except Exception` handlers."""
+
+
+def snapshots(url, deadline=None):
     q = urllib.parse.urlencode({
         "url": url, "output": "json", "fl": "timestamp,statuscode",
         "collapse": "timestamp:8", "filter": "statuscode:200", "limit": "200"})
     for i in range(3):
         try:
+            to = 60 if not deadline else max(10, min(60, int(deadline - time.time())))
             with urllib.request.urlopen(urllib.request.Request(CDX + "?" + q, headers=UA),
-                                        timeout=60) as r:
+                                        timeout=to) as r:
                 data = json.loads(r.read())
             return [row[0] for row in data[1:]]
         except Exception:
+            if deadline and time.time() + 13 > deadline:
+                raise BudgetExceeded()
             time.sleep(3)
     return None
 
@@ -99,32 +106,44 @@ def _proxy_handler():
     return _PROXY[0]
 
 
-def fetch(url, tries=3):
+def fetch(url, tries=3, deadline=None):
     """curl-based: urllib gets spurious 429s from web.archive.org where curl
-    gets 200 (header/window discrimination, observed 2026-10-22)."""
+    gets 200 (header/window discrimination, observed 2026-10-22).
+    deadline: bound every call so the 120s cron kill can never fire."""
     import subprocess
     for i in range(tries):
+        if deadline:
+            rem = deadline - time.time()
+            if rem < 10:
+                raise BudgetExceeded()
+            mt = str(int(max(15, min(90, rem))))
+        else:
+            mt = "90"
         r = subprocess.run(
-            ["curl", "-sf", "--max-time", "90", "-A", UA["User-Agent"], url],
+            ["curl", "-sf", "--max-time", mt, "-A", UA["User-Agent"], url],
             capture_output=True)
         if r.returncode == 0 and r.stdout:
             return r.stdout
         err = r.stderr.decode()[:100] if r.stderr else f"empty/rc={r.returncode}"
         if i == tries - 1:
             raise RuntimeError(err)
+        if deadline and time.time() + 40 > deadline:
+            raise BudgetExceeded()
         time.sleep(30)
 
 
-def ingest(urls, out_dir=OUT):
+def ingest(urls, out_dir=OUT, deadline=None):
     pages_dir = os.path.join(out_dir, "pages")
     os.makedirs(pages_dir, exist_ok=True)
     docs_f = os.path.join(out_dir, "documents.jsonl")
     man_f = os.path.join(out_dir, "manifest.jsonl")
     for url in urls:
+        if deadline and time.time() > deadline - 8:
+            return
         dtype = doc_type(url)
         if dtype == "skip":
             continue
-        ts_list = snapshots(url)
+        ts_list = snapshots(url, deadline=deadline)
         if ts_list is None:
             with open(man_f, "a") as f:
                 f.write(json.dumps({"url": url, "kind": "cdx-failed",
@@ -135,14 +154,16 @@ def ingest(urls, out_dir=OUT):
         # newest first: save the LATEST snapshot that holds REAL content.
         # Wayback's own crawler gets Radware-challenged on recent captures
         # (118KB 'Radware Page' stubs) — pre-challenge-era captures are real.
-        saved = False
+        saved = challenged_any = any_failed = False
         for ts in sorted(ts_list, reverse=True):
+            if deadline and time.time() > deadline - 8:
+                return   # unmanifested on purpose: retried next tick
             snap = f"https://web.archive.org/web/{ts}id_/{url}"
             rec = {"url": url, "doc_type": dtype, "ts": ts,
                    "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                    "snapshot_url": snap}
             try:
-                body = fetch(snap)
+                body = fetch(snap, deadline=deadline)
                 view = decompress(body)
                 m = re.search(rb"<title[^>]*>(.*?)</title>", view[:50000], re.S | re.I)
                 title = (m.group(1).decode("utf-8", "replace").strip()[:200]
@@ -154,6 +175,7 @@ def ingest(urls, out_dir=OUT):
                            bytes=len(body), html_title=title,
                            content_encoding="gzip" if view is not body else "identity")
                 if challenged:
+                    challenged_any = True
                     rec["status"] = "challenged_snapshot"   # stub, body not saved
                 elif saved:
                     rec["status"] = "skipped_older"         # real but not latest
@@ -164,14 +186,22 @@ def ingest(urls, out_dir=OUT):
                     rec.update(status="ok", path=f"pages/{fname}")
                     saved = True
             except Exception as e:
+                any_failed = True
                 rec.update(status=f"failed: {str(e)[:100]}")
             with open(docs_f, "a") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             time.sleep(1.2)
             if saved and rec.get("status") == "ok":
                 break    # latest real capture stored; older ones not needed raw
+        if deadline and time.time() > deadline - 3:
+            return   # unmanifested on purpose: retried next tick
+        # terminal "doc" only when we proved the outcome; all-throttle passes
+        # get "attempt" so a 429 storm can never silently burn a URL
+        terminal = saved or (challenged_any and not any_failed)
         with open(man_f, "a") as f:
-            f.write(json.dumps({"url": url, "kind": "doc", "doc_type": dtype,
+            f.write(json.dumps({"url": url,
+                                "kind": "doc" if terminal else "attempt",
+                                "doc_type": dtype,
                                 "snapshots": len(ts_list),
                                 "ts": datetime.now(timezone.utc).isoformat(
                                     timespec="seconds")}) + "\n")
