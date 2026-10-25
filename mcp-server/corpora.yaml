@@ -4,7 +4,9 @@
 # records what it excluded and why.
 
 server:
-  host: 127.0.0.1
+  # 0.0.0.0 = reachable via the container IP for SSH tunnels (voice-app pattern).
+  # Not host-published, so NOT internet-exposed.
+  host: 0.0.0.0
   port: 8646
   streamable_http_path: /mcp
 

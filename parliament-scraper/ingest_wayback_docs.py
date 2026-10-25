@@ -86,32 +86,40 @@ def snapshots(url, deadline=None):
     return None
 
 
-USE_PROXY = [False]   # flips on 429/connection burn; proxy env checked once
-_PROXY = [None]
+USE_PROXY = [True]    # ACTIVATED 2026-10-25: Wayback 429-throttles the VPS IP
+                      # (rate decayed 432 -> 86 docs/day). Residential rotation
+                      # via IPRoyal; fresh session per tick (cron = fresh process).
+_PROXY_URL = [None]
+_BROKEN = [False]     # proxy infra failure -> fall back to direct for this tick
 
 
-def _proxy_handler():
-    """IPRoyal residential fallback (creds in beehive proxy.json, never inline)."""
-    if _PROXY[0] is None:
-        import base64
+def _proxy_url():
+    """Build the IPRoyal rotating endpoint once per process. Session token is
+    random per tick so each cron run exits from a fresh residential IP."""
+    if _PROXY_URL[0] is None:
+        import base64, secrets, urllib.parse
         cfg = json.load(open("/opt/data/beehive-scraper/proxy.json"))
-        import secrets
-        sess = "s" + secrets.token_hex(5)
         user = base64.b64decode(cfg["username_b64"]).decode()
-        pw = (base64.b64decode(cfg["password_base_b64"]).decode()
-              + f"_country-nz_session-{sess}_lifetime-30m")
-        _PROXY[0] = urllib.request.build_opener(urllib.request.ProxyHandler({
-            "http": f"http://{user}:{pw}@geo.iproyal.com:12321",
-            "https": f"http://{user}:{pw}@geo.iproyal.com:12321"}))
-    return _PROXY[0]
+        pw = base64.b64decode(cfg["password_base_b64"]).decode()
+        sess = "s" + secrets.token_hex(5)
+        pw += "_country-nz_session-" + sess + "_lifetime-30m"
+        _PROXY_URL[0] = "http://" + urllib.parse.quote(user, safe="") \
+            + ":" + urllib.parse.quote(pw, safe="") + "@geo.iproyal.com:12321"
+    return _PROXY_URL[0]
 
 
 def fetch(url, tries=3, deadline=None):
     """curl-based: urllib gets spurious 429s from web.archive.org where curl
     gets 200 (header/window discrimination, observed 2026-10-22).
-    deadline: bound every call so the 120s cron kill can never fire."""
+    Through the IPRoyal residential rotation unless the proxy infra itself
+    fails (then direct for the rest of the tick). deadline bounds every call
+    so the 120s cron kill can never fire."""
     import subprocess
-    for i in range(tries):
+    proxy_on = USE_PROXY[0] and not _BROKEN[0]
+    attempts = [proxy_on] * tries
+    if proxy_on:
+        attempts[-1] = False        # last attempt always falls back to direct
+    for i, via_proxy in enumerate(attempts):
         if deadline:
             rem = deadline - time.time()
             if rem < 10:
@@ -119,13 +127,20 @@ def fetch(url, tries=3, deadline=None):
             mt = str(int(max(15, min(90, rem))))
         else:
             mt = "90"
-        r = subprocess.run(
-            ["curl", "-sf", "--max-time", mt, "-A", UA["User-Agent"], url],
-            capture_output=True)
+        cmd = ["curl", "-sf", "--max-time", mt, "-A", UA["User-Agent"]]
+        if via_proxy and not _BROKEN[0]:
+            cmd += ["-x", _proxy_url()]
+        cmd.append(url)
+        r = subprocess.run(cmd, capture_output=True)
         if r.returncode == 0 and r.stdout:
             return r.stdout
+        if r.returncode == 0:
+            raise RuntimeError("empty_capture")   # deterministic: never retried
         err = r.stderr.decode()[:100] if r.stderr else f"empty/rc={r.returncode}"
-        if i == tries - 1:
+        if r.returncode in (5, 6, 7) and not _BROKEN[0]:
+            _BROKEN[0] = True       # proxy infrastructure failure, not throttling
+            attempts = [False] * tries
+        if i == len(attempts) - 1:
             raise RuntimeError(err)
         if deadline and time.time() + 40 > deadline:
             raise BudgetExceeded()
@@ -155,7 +170,11 @@ def ingest(urls, out_dir=OUT, deadline=None):
         # Wayback's own crawler gets Radware-challenged on recent captures
         # (118KB 'Radware Page' stubs) — pre-challenge-era captures are real.
         saved = challenged_any = any_failed = False
-        for ts in sorted(ts_list, reverse=True):
+        recent_cutoff = "20250101"   # Wayback's crawler gets Radware-stubbed after this
+        srt = sorted(ts_list, reverse=True)
+        ts_order = [t for t in srt if t < recent_cutoff] + \
+                   [t for t in srt if t >= recent_cutoff]
+        for ts in ts_order:
             if deadline and time.time() > deadline - 8:
                 return   # unmanifested on purpose: retried next tick
             snap = f"https://web.archive.org/web/{ts}id_/{url}"
