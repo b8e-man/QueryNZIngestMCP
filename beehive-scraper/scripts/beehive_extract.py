@@ -295,6 +295,18 @@ def main():
     finally:
         out.close()
         ex.shutdown(wait=False, cancel_futures=True)
+    # per-run telemetry: how each tick actually spent its budget
+    try:
+        with open(os.path.join(BASE, "extract_runs.jsonl"), "a") as tf:
+            tf.write(json.dumps({
+                "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "pid": os.getpid(), "budget": args.time_budget,
+                "workers": 24, "wave": 48,
+                "ok": ok, "failed": failed, "transient": transient,
+                "elapsed": round(time.time() - t0, 1)}) + "\n")
+    except OSError:
+        pass
+
     # alert only on real trouble: total failure or heavy failure rate.
     # A couple of stubborn docs are normal — they retry (capped) next run.
     if failed and (ok == 0 or failed > max(3, (ok + failed) // 4)):
