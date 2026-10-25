@@ -262,15 +262,15 @@ def main():
     DEADLINE[0] = t0 + args.time_budget
     done_n = 0
     out = open(OUT_F, "a")
-    ex = ThreadPoolExecutor(max_workers=12)
+    ex = ThreadPoolExecutor(max_workers=24)
     try:
         i = 0
         while i < len(batch):
             remaining = args.time_budget - (time.time() - t0)
             if remaining <= 2:
                 break
-            wave = batch[i:i + 24]
-            i += 24
+            wave = batch[i:i + 48]
+            i += 48
             futs = {ex.submit(work, it): it for it in wave}
             try:
                 for fut in as_completed(futs, timeout=max(2, remaining)):
