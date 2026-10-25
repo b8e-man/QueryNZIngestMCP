@@ -1,87 +1,90 @@
 # Query NZ Ingest MCP
 
-**What it is:** an MCP server over the NZ government-publication corpora (Beehive,
-parliament.nz). The first *consumer-facing surface* of the Query NZ data plane — the
-"niche MCP server" delivery from the platform notes: tools return **records and
-measurements with confidence signals, never conclusions**. The moat is the corpus;
-the protocol is just the door.
+**What it is:** an MCP server that exposes the *contents* of the NZ
+government-publication corpora (Beehive, parliament.nz) — records, counts, date
+ranges, freshness, statistics. Nothing about how records were acquired or
+processed is exposed: the consumer sees the database, not the pipeline.
+
+**Built for full ingestion:** consumers are expected to pull the entire corpus
+through this interface. `records` is the bulk feed — stable arrival order,
+resumable cursor — and `corpora()` says when fresh records have landed.
 
 **Code canonical:** github.com/b8e-man/QueryNZIngestMCP (`mcp-server/`).
 **Live:** `/opt/data/qnz-mcp` (this directory). **Transport:** Streamable HTTP,
-`http://127.0.0.1:8646/mcp`. Health: `GET /health`.
+`http://<host>:8646/mcp`. Health: `GET /health`.
 
 ---
 
-## ELI5 — the pieces
+## The tools
 
-- **corpora.yaml** — the *control plane*. Which corpora are mounted, where their files
-  live, what counts as their date/title/id, how fresh they should be. Change this file
-  to mount a new corpus; no code edits.
-- **server.py** — the *data plane reader*. It holds the five primitives and nothing
-  else. It reads the scrapers' output files read-only and re-reads them when they
-  change. It never writes to scraper data.
-- **metering.jsonl** — one line per tool call (what was asked, how many results, how
-  long). Per-call metering is the billing foundation: not per-seat.
-- **minted_corpora.jsonl** — the *audit trail for thresholds*. Every subset a threshold
-  creates records every record it excluded and why. Thresholds never drop silently —
-  this is the platform's invisible-false-negative concern made mechanical.
+1. **corpora()** — inventory. Per corpus: record count, date range, the
+   ingestion cursor (= record count; records are appended in stable arrival
+   order), `arrivals_last_24h`, `newest_arrival`. This is the freshness
+   signal: poll it, and when the count grows, there is new data to pull.
 
-## The five primitives
+2. **records(corpus, cursor=0, limit=50, include_text=true)** — the
+   **bulk-ingestion feed**. Records in stable arrival order (new records
+   always land at the end; existing positions never change). `cursor` is how
+   many records the consumer already holds; each call returns the next batch
+   and `next_cursor`. When `next_cursor == ingest_cursor`, the consumer has
+   everything — then poll `corpora()` and resume from the saved cursor to
+   pull only what landed since. `include_text=false` gives a metadata-only
+   pass. Max 200 records per call.
 
-Each declares its type: **READ** (records → records), **REDUCER** (records →
-statistics), **ROUTER** (records → named subset).
+3. **search(query, corpus?, date_from?, date_to?, limit, offset)** — find.
+   Case-insensitive AND over record text; empty query + date filters browses.
+   Returns matches with snippets.
 
-1. **corpora()** — READ. Manifest of mounted corpora with integrity signals:
-   record counts, search coverage, extraction yield, null-date rate (slot-fill), last
-   record + freshness SLA. Read this first: it is the error bars for everything else.
-   (Family B riding alongside every content read.)
-2. **search(query, corpus?, date_from?, date_to?, limit, offset)** — READ. Case-insensitive
-   AND search over title + body. Covers **extracted and un-extracted captures alike**
-   (raw page bodies are indexed), so nothing is silently absent from results. Every hit
-   carries a provenance block (URL, sha256, capture file, snapshot URL, extraction model).
-3. **get(record_id, corpus?)** — READ. One record in full, raw, unsummarised, with its
-   provenance chain and extraction (topics/quotes/model) or `extraction: null`.
-4. **recent(since, corpus?)** — READ (delta). Records with date ≥ since — the
-   intake-monitoring shape ("recompute on change" family).
-5. **measure(keywords, corpora?, measure_kind, ...)** — REDUCER, optionally ROUTER.
-   Keyword × corpus matrix with the three measures kept separable (IDEA-001 §3):
-   - `count` — raw occurrences
-   - `rate` — occurrences per 10k corpus words
-   - `salience` — weighted log-odds vs the rest, with an informative Dirichlet prior
-     (Monroe, Colaresi & Quinn 2008), z-scored. *Prior strength in corpora.yaml is
-     Slider A generalised; `source_weights` is Slider B* — a human judgement layer,
-     always surfaced in output as `judgement_weight`, never mixed into the statistic.
-   Every cell carries `n_docs` and a `low_n` flag. Small corpora are annotated,
-   **never hidden**.
-   - **Minting (ROUTER):** `mint_name` + `mint_threshold` (on count|rate) gathers
-     records at/above the threshold into a named subset, searchable as `corpus="mint:<name>"`.
-     The mint record stores the definition, every included id, and every exclusion with
-     the record's value and the threshold it failed. This is Plane A output-gating:
-     threshold-gathered selections that can feed downstream service contracts.
+4. **get(record_id, corpus?)** — one record in full: the database's own
+   fields and text.
 
-## Consumption (e.g. from Hermes)
+5. **measure(keywords, corpora?, measure_kind, ...)** — statistics. Keyword ×
+   corpus matrix as count, rate (per 10k words), or salience (weighted
+   log-odds with informative Dirichlet prior, z-scored — the statistic that
+   stays comparable across corpora of wildly different sizes). Every cell
+   carries `n_docs` and a `low_n` flag: small corpora are annotated, never
+   hidden. Optional `mint_name` + `mint_threshold` (on count or rate) gathers
+   records at/above the threshold into a named subset, searchable as
+   `corpus="mint:<name>"` — with every exclusion recorded alongside its value
+   and the threshold it failed.
 
-```yaml
-mcp_servers:
-  query_nz:
-    url: "http://127.0.0.1:8646/mcp"
+## Record shape
+
+Records carry the database's own fields (url/title, dates, ministers,
+portfolios, body text, topics, quotes, question/bill/diary fields — whatever
+the corpus holds) plus `seq` (the arrival-order position — the cursor anchor)
+and `id`. Acquisition and processing metadata (hashes, capture files, fetch
+timestamps, snapshot URLs, model names) is internal and never returned.
+
+## Consumer ingestion pattern
+
+```
+state = {corpus: cursor}
+loop:
+  for corpus in corpora():
+      if corpus.ingest_cursor > state[corpus.name]:
+          pull records(corpus, cursor=state[corpus.name]) until next_cursor == ingest_cursor
+          state[corpus.name] = next_cursor
 ```
 
-Tools register as `mcp_query_nz_<tool>`. `timeout: 180` recommended for `measure`
-over large corpora.
+One full pass, then incremental forever. Fresh arrivals show up as
+`arrivals_last_24h` / a growing `ingest_cursor` in `corpora()`.
 
 ## Design rules this server holds itself to
 
-- **Never conclusions.** Outputs are records, counts, rates, z-scores, flags.
-  Relevance, guilt, significance — downstream consumers' business.
-- **Never silent loss.** Coverage gaps, extraction yield, null rates are reported with
-  the reads; thresholds write exclusion audits; unknown corpus names error loudly.
-- **Provenance on every record.** sha256, source URL, capture timestamp, capture file,
-  extraction model — the chain is part of the payload.
+- **The database, not the pipeline.** Counts, dates, freshness, statistics —
+  never acquisition or processing internals.
+- **Nothing is silently absent.** Captured-but-not-yet-enriched documents are
+  records too (with their text); thresholds write exclusion audits; unknown
+  corpus names error loudly.
+- **Measurements, not conclusions.** Statistics arrive with error bars;
+  interpretation is the consumer's job.
 
 ## Layout
 
-- `corpora.yaml` — control plane (edit to mount corpora)
-- `server.py` — the primitives (mcp SDK v2, MCPServer, streamable-http)
+- `corpora.yaml` — which corpora are mounted, where their files live, date/id
+  field mapping (edit to mount a new corpus; no code changes)
+- `server.py` — the five tools (mcp SDK v2, MCPServer, streamable-http)
 - `README.md` — this
-- runtime state (never committed): `metering.jsonl`, `minted_corpora.jsonl`, `.venv/`
+- runtime state (never committed): `metering.jsonl`, `minted_corpora.jsonl`,
+  `server.log`, `.venv/`

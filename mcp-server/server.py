@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
-"""Query NZ Ingest MCP — primitive operations over the government-publication corpora.
+"""Query NZ Ingest MCP — the contents of the corpora, nothing else.
 
-Design rules (IDEA-001):
-- Primitives are MEASUREMENTS or RECORD RETURNS. Never conclusions.
-- Every primitive declares its type in its docstring:
-  READ (records -> records) / REDUCER (records -> statistics) / ROUTER (records -> named subset).
-- Thresholds are first-class and auditable: every mint records what it excluded and why.
-- Family B (integrity) signals ride alongside every content read: coverage, extraction
-  yield, slot-fill, freshness. Silent loss is the failure mode this exists to prevent.
+Design rules:
+- The server reports WHAT the database holds: records, counts, date ranges,
+  freshness, statistics. How records were acquired or processed is internal
+  and is never returned.
+- Consumers are expected to ingest the ENTIRE corpus through this interface.
+  `records` paginates in stable arrival order with a resumable cursor — the
+  bulk-ingestion path.
+- Fresh records land at the end of that order. `corpora()` reports counts and
+  recent-arrival counts, so a consumer always knows when there is new data
+  to pull; `records(cursor=...)` delivers it.
+- Statistics are measurements with error bars (n_docs, low_n flags), never
+  conclusions.
 
-Transport: MCP Streamable HTTP on 127.0.0.1:8646/mcp (see corpora.yaml).
-Metering: every tool call is appended to metering.jsonl (per-call, not per-seat).
+Transport: MCP Streamable HTTP on 0.0.0.0:8646/mcp (see corpora.yaml).
+Metering: every tool call is appended to metering.jsonl (per-call).
 """
 
 import hashlib
@@ -20,7 +25,7 @@ import os
 import re
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import yaml
 from mcp.server.mcpserver import MCPServer
@@ -29,10 +34,22 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 CONFIG = os.path.join(BASE, "corpora.yaml")
 METER_F = os.path.join(BASE, "metering.jsonl")
 MINTED_F = os.path.join(BASE, "minted_corpora.jsonl")
-MAX_RAW_INDEX = 20000        # cap raw-page bodies held in memory per docs corpus
+RAW_INDEX_CAP = 120000       # safety ceiling only; never reached (queue < 70k)
 
 TAG_RE = re.compile(r"<(script|style)[^>]*>[\s\S]*?</\1>|<[^>]+>", re.I)
 WS_RE = re.compile(r"\s+")
+
+# Internal plumbing — never returned to consumers, regardless of source file.
+HIDDEN_FIELDS = {
+    "sha256", "source_file", "model", "extracted_at", "fetched_at",
+    "snapshot_url", "bytes", "content_encoding", "status", "path",
+    "raw_file", "source_url", "ts_fetched",
+}
+
+
+def clean(row: dict) -> dict:
+    return {k: v for k, v in row.items()
+            if not k.startswith("_") and k not in HIDDEN_FIELDS}
 
 
 def strip_html(html: str) -> str:
@@ -44,7 +61,11 @@ def norm_date(v) -> str:
         return ""
     s = str(v).strip()
     m = re.match(r"(\d{4}-\d{2}-\d{2})", s)
-    return m.group(1) if m else s[:10]
+    if m:
+        return m.group(1)
+    if re.match(r"^\d{8,14}$", s):        # wayback ts: 20060902092214
+        return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
+    return s[:10]
 
 
 def now_iso() -> str:
@@ -52,7 +73,6 @@ def now_iso() -> str:
 
 
 def meter(tool: str, params: dict, n_results: int, ms: float) -> None:
-    """Per-call metering record. params are hashed, not stored raw."""
     rec = {
         "ts": now_iso(),
         "tool": tool,
@@ -69,7 +89,6 @@ def meter(tool: str, params: dict, n_results: int, ms: float) -> None:
 
 
 def _resolve_page(pages_dir: str, rel: str):
-    """Path conventions differ per corpus (bare relative vs pages/-prefixed)."""
     for cand in (os.path.join(pages_dir, rel),
                  os.path.join(os.path.dirname(pages_dir), rel),
                  os.path.join(pages_dir, os.path.basename(rel))):
@@ -79,17 +98,18 @@ def _resolve_page(pages_dir: str, rel: str):
 
 
 class Corpus:
-    """One mounted corpus with an in-memory index, reloaded on file mtime change."""
+    """One mounted corpus, indexed in stable ARRIVAL order.
+
+    Arrival order comes from the append-only capture/registry file (or the
+    record file itself): a record's position never changes once assigned, and
+    new records always land at the end. That makes `records(cursor=N)` a
+    correct incremental-ingestion feed.
+    """
 
     def __init__(self, name: str, cfg: dict):
         self.name = name
         self.cfg = cfg
-        self.records = []          # [{id, date, title, text, raw}]
-        self.captured = 0          # capture-registry denominator (docs corpora)
-        self.indexed_raw = 0       # raw-page bodies included in search
-        self.gap_reason = ""       # why indexed < captured, if so
-        self.last_date = ""
-        self.null_dates = 0
+        self.records = []          # [{seq, id, date, title, text, fields, arrived}]
         self._mtimes = {}
         self._lock = threading.Lock()
         self.reload(force=True)
@@ -107,16 +127,13 @@ class Corpus:
             return
         with self._lock:
             self._mtimes = self._stat()
-            self.records = []
-            self.captured = 0
-            self.indexed_raw = 0
-            self.gap_reason = ""
-            self.null_dates = 0
             if self.cfg.get("kind") == "docs":
-                self._load_docs()
+                recs = self._load_docs()
             else:
-                self._load_records()
-            self._finalize()
+                recs = self._load_records()
+            for i, r in enumerate(recs):
+                r["seq"] = i
+            self.records = recs
 
     def _load_jsonl(self, path: str):
         if not path or not os.path.exists(path):
@@ -131,7 +148,7 @@ class Corpus:
                 except ValueError:
                     continue
 
-    def _row_to_rec(self, row: dict, text: str):
+    def _row_to_rec(self, row: dict, text: str, arrived: str = "") -> dict:
         rid = str(row.get(self.cfg["id_field"]) or row.get("url")
                   or hashlib.sha256(json.dumps(row, sort_keys=True).encode()).hexdigest()[:16])
         return {
@@ -139,75 +156,86 @@ class Corpus:
             "date": norm_date(row.get(self.cfg["date_field"])),
             "title": str(row.get(self.cfg.get("title_field", "")) or "")[:300],
             "text": text,
-            "raw": row,
+            "fields": clean(row),
+            "arrived": arrived or str(row.get("fetched_at")
+                                      or row.get("_fetched_at")
+                                      or row.get("_collected")
+                                      or row.get("fetched") or ""),
         }
 
     def _load_docs(self):
         pages = self.cfg.get("pages_dir")
-        extracted = {}
+        content = {}
         for row in self._load_jsonl(self.cfg.get("extracted_file")):
             status = row.get("status")
             if status is not None and status != "ok":
-                continue        # challenged/failed capture rows are not records
+                continue
             if (row.get("kind") and not row.get("body_text")
                     and not row.get("path")):
-                continue        # bare registry row (manifest kind=...)
+                continue
             parts = [str(row.get(k, "")) for k in ("title", "body_text", "html_title")]
             if not row.get("body_text") and row.get("path") and pages:
                 fpath = _resolve_page(pages, row["path"])
                 if fpath:
                     with open(fpath, encoding="utf-8", errors="replace") as fh:
                         parts.append(strip_html(fh.read()))
-            text = WS_RE.sub(" ", " ".join(parts))
-            rec = self._row_to_rec(row, text)
-            extracted[rec["id"]] = rec
-            if not rec["date"]:
-                self.null_dates += 1
-        self.records = list(extracted.values())
+            rec = self._row_to_rec(row, WS_RE.sub(" ", " ".join(parts)))
+            content[rec["id"]] = rec
 
-        # capture registry = coverage denominator (beehive: done.jsonl;
-        # wayback: manifest rows) so un-captured-but-expected gaps stay visible
-        cap_path = self.cfg.get("captures_file")
-        pages = self.cfg.get("pages_dir")
-        n_cap = 0
-        raw_added = 0
-        for row in self._load_jsonl(cap_path):
-            ok = row.get("status") == "ok" or row.get("kind") == "doc"
-            if not ok:
+        ordered, seen = [], set()
+        raw_loaded = 0
+        for row in self._load_jsonl(self.cfg.get("captures_file")
+                                    or self.cfg.get("extracted_file")):
+            st, kind = row.get("status"), row.get("kind")
+            if st is not None and st != "ok":
                 continue
-            n_cap += 1
+            if kind in ("attempt", "cdx-failed"):
+                continue
             rid = str(row.get(self.cfg["id_field"]) or row.get("url") or "")
-            if rid in extracted or not pages:
+            if not rid or rid in seen:
                 continue
-            fname = row.get("path") or ""
-            if fname and raw_added < MAX_RAW_INDEX:
-                fpath = _resolve_page(pages, fname)
-                if fpath:
-                    with open(fpath, encoding="utf-8", errors="replace") as f:
-                        body = strip_html(f.read())
-                    self.records.append({"id": rid, "date": norm_date(row.get("fetched_at")),
-                                         "title": str(row.get("html_title") or "")[:300],
-                                         "text": body, "raw": row})
-                    raw_added += 1
-        self.captured = max(n_cap, len(self.records))
-        self.indexed_raw = raw_added
-        if len(self.records) < n_cap:
-            self.gap_reason = (f"{n_cap - len(self.records)} captured docs not in search "
-                               f"index (raw-index cap {MAX_RAW_INDEX})")
+            rec = content.get(rid)
+            if rec is None:
+                # captured but not extracted: the record exists NOW, its body
+                # lives in the page store. Every captured document is a record.
+                parts = [str(row.get("title") or row.get("html_title") or "")]
+                if row.get("path") and pages and raw_loaded < RAW_INDEX_CAP:
+                    fpath = _resolve_page(pages, row["path"])
+                    if fpath:
+                        with open(fpath, encoding="utf-8", errors="replace") as fh:
+                            parts.append(strip_html(fh.read()))
+                        raw_loaded += 1
+                rec = self._row_to_rec(row, WS_RE.sub(" ", " ".join(parts)))
+            if row.get("fetched_at"):
+                rec["arrived"] = row["fetched_at"]
+            ordered.append(rec)
+            seen.add(rid)
+        for rid, rec in content.items():
+            if rid not in seen:
+                ordered.append(rec)
+        return ordered
 
     def _load_records(self):
+        out = []
         for row in self._load_jsonl(self.cfg.get("record_file")):
             text = " ".join(str(v) for v in row.values() if isinstance(v, str))
-            rec = self._row_to_rec(row, WS_RE.sub(" ", text))
-            self.records.append(rec)
-            if not rec["date"]:
-                self.null_dates += 1
-        self.captured = len(self.records)
+            out.append(self._row_to_rec(row, WS_RE.sub(" ", text)))
+        return out
 
-    def _finalize(self):
-        dates = [r["date"] for r in self.records if r["date"]]
-        self.last_date = max(dates) if dates else ""
-        self.words = sum(len(r["text"].split()) for r in self.records)
+    # -- freshness (data-about-the-data, computed from internal timestamps) --
+    def freshness(self) -> dict:
+        arr = sorted(r["arrived"] for r in self.records if r.get("arrived"))
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(
+            timespec="seconds")
+        dates = sorted(r["date"] for r in self.records if r["date"])
+        return {
+            "records": len(self.records),
+            "ingest_cursor": len(self.records),
+            "date_from": dates[0] if dates else None,
+            "date_to": dates[-1] if dates else None,
+            "arrivals_last_24h": sum(1 for a in arr if a > cutoff),
+            "newest_arrival": arr[-1] if arr else None,
+        }
 
 
 CFG = yaml.safe_load(open(CONFIG))
@@ -216,21 +244,12 @@ CORPORA = {n: Corpus(n, c) for n, c in CFG["corpora"].items()}
 
 mcp = MCPServer(
     name="query-nz-ingest",
-    version="0.1.0",
-    instructions=("Primitive operations over NZ government-publication corpora. "
-                  "Tools return records and measurements with provenance and integrity "
-                  "signals. They never return conclusions."),
-)
-
-
-def _select_corpora(corpus: str | None):
-    if corpus is None:
-        return list(CORPORA), None
-    if corpus.startswith("mint:"):
-        return None, corpus[5:]
-    if corpus in CORPORA:
-        return [corpus], None
-    return None, None
+    version="0.2.0",
+    instructions=("The contents of NZ government-publication corpora: records, "
+                  "counts, date ranges, freshness and statistics. Consumers may "
+                  "ingest the full corpus via the `records` tool (stable arrival "
+                  "order, resumable cursor; new records land at the end). Nothing "
+                  "about acquisition or processing is exposed."))
 
 
 def _fresh(name: str) -> Corpus:
@@ -238,32 +257,13 @@ def _fresh(name: str) -> Corpus:
     return CORPORA[name]
 
 
-def _integrity(c: Corpus) -> dict:
-    """Family B signals — returned with every content read."""
-    n = len(c.records)
-    return {
-        "records": n,
-        "captured": c.captured,
-        "search_coverage": round(n / c.captured, 4) if c.captured else 1.0,
-        "coverage_gap_reason": c.gap_reason,
-        "null_date_rate": round(c.null_dates / n, 4) if n else 0.0,
-        "last_record_date": c.last_date,
-    }
-
-
-def _provenance(name: str, rec: dict) -> dict:
-    raw = rec.get("raw") or {}
-    prov = {"corpus": name, "record_id": rec["id"]}
-    for k in ("url", "snapshot_url", "sha256", "fetched_at", "source_file",
-              "status", "bytes", "content_encoding"):
-        if raw.get(k):
-            prov[k] = raw[k]
-    extraction = None
-    if raw.get("body_text") and raw.get("extracted_at"):
-        extraction = {"model": raw.get("model"), "extracted_at": raw.get("extracted_at"),
-                      "topics": raw.get("topics"), "quotes": raw.get("quotes")}
-    prov["extraction"] = extraction
-    return prov
+def _rec_out(r: dict, include_text: bool = True) -> dict:
+    out = {"seq": r["seq"], "id": r["id"], **r["fields"]}
+    if r["date"] and "date" not in out:
+        out["date"] = r["date"]
+    if include_text:
+        out["text"] = r["text"]
+    return out
 
 
 def _parse_ymd(s: str) -> str:
@@ -272,68 +272,69 @@ def _parse_ymd(s: str) -> str:
 
 @mcp.tool()
 def corpora() -> dict:
-    """READ (control plane). Manifest of mounted corpora with integrity signals
-    (coverage, extraction yield, slot-fill, freshness) plus minted corpora.
-    Always read this first: it is the error bars for every other tool."""
+    """READ (inventory). What the database holds, per corpus: record count,
+    date range, the ingestion cursor (= record count; records are appended in
+    stable arrival order), and freshness — how many records landed in the last
+    24 hours and when the newest arrived. Read this first; poll it to detect
+    fresh records, then pull them with `records`."""
     t0 = time.time()
     out = []
     for name in CFG["corpora"]:
         c = _fresh(name)
-        cfg = c.cfg
-        item = {
-            "name": name,
-            "label": cfg.get("label"),
-            "source_category": cfg.get("source_category"),
-            **_integrity(c),
-        }
-        if cfg.get("kind") == "docs" and cfg.get("extracted_file"):
-            n_extracted = sum(1 for r in c.records
-                              if (r.get("raw") or {}).get("extracted_at"))
-            if n_extracted:
-                item["extraction_yield"] = (round(n_extracted / c.captured, 4)
-                                            if c.captured else 0.0)
-                item["extracted_records"] = n_extracted
-        age_h = None
-        if c.last_date:
-            try:
-                dt = datetime.fromisoformat(c.last_date).replace(tzinfo=timezone.utc)
-                age_h = round((datetime.now(timezone.utc) - dt).total_seconds() / 3600, 1)
-            except ValueError:
-                pass
-        item["last_record_age_hours"] = age_h
-        item["freshness_sla_hours"] = cfg.get("freshness_sla_hours")
-        item["freshness_ok"] = (age_h is not None and cfg.get("freshness_sla_hours")
-                                and age_h <= cfg["freshness_sla_hours"])
+        item = {"name": name,
+                "label": c.cfg.get("label"),
+                "source_category": c.cfg.get("source_category")}
+        item.update(c.freshness())
         out.append(item)
-    minted = _load_minted()
     meter("corpora", {}, len(out), (time.time() - t0) * 1000)
-    return {"corpora": out, "minted_corpora": minted,
-            "note": "Measurements and records only — no conclusions are drawn."}
+    return {"corpora": out,
+            "note": "Counts and freshness only. Pull records with `records`."}
+
+
+@mcp.tool()
+def records(corpus: str, cursor: int = 0, limit: int = 50,
+            include_text: bool = True) -> dict:
+    """READ (bulk ingestion). The corpus in stable arrival order, paginated.
+    `cursor` is the number of records already ingested (0 = start); each
+    response returns the next batch and `next_cursor`. When `next_cursor`
+    equals `ingest_cursor` from `corpora()`, the consumer has everything —
+    poll `corpora()` for fresh arrivals, then call again with the saved
+    cursor to pull only what landed since. Record fields are the database's
+    own; set include_text=false for a metadata-only pass."""
+    t0 = time.time()
+    if corpus not in CORPORA:
+        return {"error": f"unknown corpus {corpus!r}", "available": list(CORPORA)}
+    c = _fresh(corpus)
+    cursor = max(0, int(cursor))
+    lim = max(1, min(int(limit), 200))
+    batch = c.records[cursor:cursor + lim]
+    out = [_rec_out(r, include_text) for r in batch]
+    meter("records", {"corpus": corpus, "cursor": cursor}, len(out),
+          (time.time() - t0) * 1000)
+    return {"corpus": corpus, "total": len(c.records),
+            "cursor": cursor, "next_cursor": cursor + len(out),
+            "records": out}
 
 
 @mcp.tool()
 def search(query: str, corpus: str | None = None, date_from: str | None = None,
            date_to: str | None = None, limit: int = 20, offset: int = 0) -> dict:
-    """READ (records -> records). Case-insensitive AND search over indexed text
-    (title + body). Covers extracted AND raw-page bodies so un-extracted captures
-    stay findable — never silently absent. Returns provenance with every hit and
-    coverage numbers so the hit list carries its own error bars."""
+    """READ (find). Case-insensitive AND search over record text across one
+    corpus or all. Empty query browses (use the date filters). Returns
+    matching records with a text snippet — summaries of the data, not of
+    anything else."""
     t0 = time.time()
     terms = [t.lower() for t in query.split() if t.strip()]
-    hits = []
-    scanned = 0
-    indexed = 0
-    names, mint = _select_corpora(corpus)
-    if mint is not None:
-        return _search_mint(mint, terms, date_from, date_to, limit, offset, t0)
-    if names is None:
-        meter("search", {"q": query, "corpus": corpus}, 0, (time.time() - t0) * 1000)
+    if corpus is not None and corpus not in CORPORA and not corpus.startswith("mint:"):
         return {"error": f"unknown corpus {corpus!r}", "available": list(CORPORA)}
+    if corpus is not None and corpus.startswith("mint:"):
+        res = _search_mint(corpus[5:], terms, date_from, date_to, limit, offset, t0)
+        return res
+    hits = []
+    names = [corpus] if corpus else list(CORPORA)
     for name in names:
         c = _fresh(name)
-        indexed += len(c.records)
         for rec in c.records:
-            scanned += 1
             d = rec["date"]
             if date_from and d and d < _parse_ymd(date_from):
                 continue
@@ -342,22 +343,13 @@ def search(query: str, corpus: str | None = None, date_from: str | None = None,
             text_l = rec["text"].lower()
             if not all(t in text_l for t in terms):
                 continue
-            snippet = _snippet(rec["text"], terms[0])
-            hits.append({
-                "corpus": name,
-                "record_id": rec["id"],
-                "date": d or None,
-                "title": rec["title"] or None,
-                "snippet": snippet,
-                "provenance": _provenance(name, rec),
-            })
+            hits.append({"corpus": name, "seq": rec["seq"], "id": rec["id"],
+                         "date": d or None, "title": rec["title"] or None,
+                         "snippet": _snippet(rec["text"], terms[0]) if terms else None})
     total = len(hits)
     page = hits[offset:offset + max(1, min(limit, 100))]
-    meter("search", {"q": query, "corpus": corpus, "from": date_from, "to": date_to},
-          total, (time.time() - t0) * 1000)
-    return {"hits": page, "total": total, "offset": offset, "limit": limit,
-            "scanned_records": scanned, "indexed_records": indexed,
-            "note": "Records with provenance — no relevance scoring or conclusions."}
+    meter("search", {"q": query, "corpus": corpus}, total, (time.time() - t0) * 1000)
+    return {"hits": page, "total": total, "offset": offset, "limit": limit}
 
 
 def _snippet(text: str, term: str, width: int = 140) -> str:
@@ -371,8 +363,7 @@ def _snippet(text: str, term: str, width: int = 140) -> str:
 def _search_mint(name, terms, date_from, date_to, limit, offset, t0):
     mint = _load_minted(name)
     if not mint:
-        meter("search", {"mint": name}, 0, (time.time() - t0) * 1000)
-        return {"error": f"no minted corpus named {name!r}", "minted_corpora": _load_minted()}
+        return {"error": f"no minted subset named {name!r}", "minted_subsets": _load_minted()}
     ids = set(mint.get("included_ids", []))
     hits = []
     for cname, idsel in mint.get("corpus_ids", {}).items():
@@ -389,66 +380,36 @@ def _search_mint(name, terms, date_from, date_to, limit, offset, t0):
             text_l = rec["text"].lower()
             if terms and not all(t in text_l for t in terms):
                 continue
-            hits.append({"corpus": cname, "record_id": rec["id"], "date": d or None,
-                         "title": rec["title"] or None,
+            hits.append({"corpus": cname, "seq": rec["seq"], "id": rec["id"],
+                         "date": d or None, "title": rec["title"] or None,
                          "snippet": _snippet(rec["text"], terms[0]) if terms else None,
-                         "provenance": _provenance(cname, rec),
-                         "minted_into": name})
+                         "subset": name})
     total = len(hits)
     page = hits[offset:offset + max(1, min(limit, 100))]
     meter("search", {"mint": name}, total, (time.time() - t0) * 1000)
     return {"hits": page, "total": total, "offset": offset, "limit": limit,
-            "mint_definition": {k: mint[k] for k in ("name", "threshold", "measure_kind",
-                                                     "keywords", "created_at")
-                                if k in mint},
-            "note": "Subset minted by threshold — see minted_corpora for exclusions."}
+            "subset_definition": {k: mint[k] for k in ("name", "threshold",
+                                                       "measure_kind", "keywords",
+                                                       "created_at") if k in mint}}
 
 
 @mcp.tool()
 def get(record_id: str, corpus: str | None = None) -> dict:
-    """READ (record -> record). One record in full: text, provenance chain
-    (source URL, capture, sha, snapshot), and extraction (model, topics, quotes)
-    or extraction: null when not extracted. Never summarised — raw record."""
+    """READ (detail). One record in full — the database's own fields and text,
+    nothing else."""
     t0 = time.time()
-    names, _ = _select_corpora(corpus)
-    if names is None:
+    if corpus is not None and corpus not in CORPORA:
         return {"error": f"unknown corpus {corpus!r}", "available": list(CORPORA)}
+    names = [corpus] if corpus else list(CORPORA)
     for name in names:
         c = _fresh(name)
         for rec in c.records:
             if rec["id"] == record_id:
-                out = {"corpus": name, "record": {k: rec["raw"].get(k)
-                                                  for k in rec["raw"]},
-                       "text": rec["text"], "provenance": _provenance(name, rec)}
                 meter("get", {"id": record_id, "corpus": corpus}, 1,
                       (time.time() - t0) * 1000)
-                return out
+                return {"corpus": name, **_rec_out(rec, include_text=True)}
     meter("get", {"id": record_id, "corpus": corpus}, 0, (time.time() - t0) * 1000)
     return {"error": "not found", "record_id": record_id}
-
-
-@mcp.tool()
-def recent(since: str, corpus: str | None = None, limit: int = 50) -> dict:
-    """READ (delta). Records with date >= since (ISO date). The intake-monitoring
-    primitive: what has arrived in the corpus since a point in time."""
-    t0 = time.time()
-    since_d = _parse_ymd(since)
-    names, _ = _select_corpora(corpus)
-    if names is None:
-        return {"error": f"unknown corpus {corpus!r}", "available": list(CORPORA)}
-    hits = []
-    for name in names:
-        c = _fresh(name)
-        for rec in c.records:
-            if rec["date"] and rec["date"] >= since_d:
-                hits.append({"corpus": name, "record_id": rec["id"], "date": rec["date"],
-                             "title": rec["title"] or None,
-                             "provenance": _provenance(name, rec)})
-    hits.sort(key=lambda r: r["date"], reverse=True)
-    meter("recent", {"since": since, "corpus": corpus}, len(hits),
-          (time.time() - t0) * 1000)
-    return {"records": hits[:max(1, min(limit, 500))], "total": len(hits),
-            "since": since_d}
 
 
 @mcp.tool()
@@ -456,13 +417,14 @@ def measure(keywords: list[str], corpora_filter: list[str] | None = None,
             measure_kind: str = "count", date_from: str | None = None,
             date_to: str | None = None,
             mint_name: str | None = None, mint_threshold: float | None = None) -> dict:
-    """REDUCER (records -> statistics), optionally ROUTER (records -> named subset).
-    Keyword x corpus matrix with three separable measures (IDEA-001 §3):
-    count (raw), rate (per 10k words), salience (weighted log-odds with informative
-    Dirichlet prior, z-scored). Every cell carries n_docs and a low_n flag —
-    small corpora are annotated, never hidden. With mint_name + mint_threshold,
-    records at/above the threshold (on the chosen measure) are minted into a named
-    subset; the audit records every exclusion and its value."""
+    """REDUCER (statistics), optionally ROUTER (named subset).
+    Keyword x corpus matrix with three separable measures:
+    count (raw), rate (per 10k words), salience (weighted log-odds with
+    informative Dirichlet prior, z-scored). Every cell carries n_docs and a
+    low_n flag — small corpora are annotated, never hidden. With mint_name +
+    mint_threshold, records at/above the threshold (on count or rate) are
+    gathered into a named subset, searchable as corpus='mint:<name>'; every
+    exclusion is recorded with its value and the threshold it failed."""
     t0 = time.time()
     if not keywords:
         return {"error": "no keywords"}
@@ -471,8 +433,8 @@ def measure(keywords: list[str], corpora_filter: list[str] | None = None,
     kws = [k.lower() for k in keywords]
     names = ([n for n in corpora_filter if n in CORPORA]
              if corpora_filter else list(CORPORA))
-    stats = {}           # name -> per-kw counts + totals
-    per_doc = {}         # name -> id -> per-kw counts (for mint audit)
+    stats = {}
+    per_doc = {}
     global_counts = {k: 0 for k in kws}
     global_words = 0
     for name in names:
@@ -544,23 +506,23 @@ def measure(keywords: list[str], corpora_filter: list[str] | None = None,
     out = {"cells": cells, "measure_kind": measure_kind,
            "prior_strength": prior if measure_kind == "salience" else None,
            "rate_per": rate_per,
-           "note": ("Cells carry n_docs and low_n flags. Salience = weighted log-odds "
-                    "vs the rest (Monroe et al. 2008). Judgement weights are human-set, "
-                    "not derivable.")}
+           "note": ("Cells carry n_docs and low_n flags. Salience = weighted "
+                    "log-odds vs the rest of the selected corpora.")}
     if mint_name is not None and mint_threshold is not None:
         if measure_kind == "salience":
             out["mint"] = {"error": "salience is corpus-level; mint on count or rate"}
         else:
             out["mint"] = _mint(mint_name, kws, measure_kind, float(mint_threshold),
-                                per_doc, stats, names, t0)
+                                per_doc, stats, names)
     meter("measure", {"keywords": kws, "kind": measure_kind, "corpora": names},
           len(cells), (time.time() - t0) * 1000)
     return out
 
 
-def _mint(name, kws, measure_kind, threshold, per_doc, stats, names, t0):
-    """Router: mint a named subset. Records EVERY disposition (included/excluded
-    with the doc's value and the threshold) — thresholds never drop silently."""
+def _mint(name, kws, measure_kind, threshold, per_doc, stats, names):
+    """Router: mint a named subset. Records EVERY disposition (included vs
+    excluded with the record's value and the threshold) — thresholds never
+    drop records silently."""
     rate_per = float(MEASURE_CFG.get("rate_per", 10000))
     included, excluded = [], []
     corpus_ids = {}
@@ -571,13 +533,12 @@ def _mint(name, kws, measure_kind, threshold, per_doc, stats, names, t0):
             value = sum(entry["hits"].values())
             if measure_kind == "rate":
                 value = value / max(entry["words"], 1) * rate_per
-            entry = {"record_id": rid, "value": round(float(value), 3)}
             if value >= threshold:
                 included.append(rid)
                 sel.append(rid)
             else:
-                entry["reason"] = f"value {value:.3f} < threshold {threshold}"
-                excluded.append(entry)
+                excluded.append({"record_id": rid, "value": round(float(value), 3),
+                                 "reason": f"value {value:.3f} < threshold {threshold}"})
         corpus_ids[cname] = sel
     mint_rec = {
         "name": name,
@@ -629,6 +590,6 @@ async def health(request):
 
 if __name__ == "__main__":
     srv = CFG.get("server", {})
-    mcp.run(transport="streamable-http", host=srv.get("host", "127.0.0.1"),
+    mcp.run(transport="streamable-http", host=srv.get("host", "0.0.0.0"),
             port=int(srv.get("port", 8646)),
             streamable_http_path=srv.get("streamable_http_path", "/mcp"))

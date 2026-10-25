@@ -60,7 +60,7 @@ corpora:
     source_category: parliamentary-record
     kind: records
     id_field: billNumber
-    date_field: date
+    date_field: lastStageDate
     title_field: billTitle
     record_file: /opt/data/parliament-scraper/data/bills_records.jsonl
     freshness_sla_hours: 24
