@@ -127,7 +127,7 @@ def _chat(prompt, token, base_url, max_tokens, model=MODEL):
         base_url.rstrip("/") + "/chat/completions", data=payload,
         headers={"Authorization": f"Bearer {token}",
                  "Content-Type": "application/json"})
-    budget = max(15, min(180, DEADLINE[0] - time.time()))
+    budget = max(12, min(180, DEADLINE[0] - time.time()))
     with urllib.request.urlopen(req, timeout=budget) as r:
         resp = json.loads(r.read())
     choice = resp["choices"][0]
@@ -189,7 +189,7 @@ def get_auth():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=400)
-    ap.add_argument("--time-budget", type=int, default=75,
+    ap.add_argument("--time-budget", type=int, default=90,
                     help="stop after N seconds (cron runner kills at ~120s)")
     args = ap.parse_args()
 
@@ -244,6 +244,8 @@ def main():
         except Exception as e:
             if is_transient(e):
                 raise Transient(str(e)[:150])
+            if time.time() > DEADLINE[0] - 20:
+                raise Transient(str(e)[:150])   # no time for fallback; retry next tick
             # deterministic odd doc — one try with the fallback model
             rec["model"] = FALLBACK_MODEL
             rec["topics"], rec["quotes"] = llm_extract(
@@ -260,15 +262,15 @@ def main():
     DEADLINE[0] = t0 + args.time_budget
     done_n = 0
     out = open(OUT_F, "a")
-    ex = ThreadPoolExecutor(max_workers=6)
+    ex = ThreadPoolExecutor(max_workers=12)
     try:
         i = 0
         while i < len(batch):
             remaining = args.time_budget - (time.time() - t0)
             if remaining <= 2:
                 break
-            wave = batch[i:i + 12]
-            i += 12
+            wave = batch[i:i + 24]
+            i += 24
             futs = {ex.submit(work, it): it for it in wave}
             try:
                 for fut in as_completed(futs, timeout=max(2, remaining)):
