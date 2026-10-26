@@ -25,9 +25,9 @@ Text tool: real poppler pdftotext/pdfinfo, user-space install under
 speech splits, so nothing is marked derived.
 
 Usage:
-  python3 hansard_debates.py                    # back run 2024-11-20 .. today
-  python3 hansard_debates.py --from 2026-09-01  # narrower window
-  python3 hansard_debates.py --time-budget 90   # cron tick (stops cleanly)
+  python3 hansard_debates.py                    # FULL back run 1990 .. today
+ python3 hansard_debates.py --from 2026-09-01  # narrower window
+ python3 hansard_debates.py --time-budget 90   # cron tick (stops cleanly)
 
 Silent when nothing new. Idempotent: dates already recorded, known
 non-sitting days, and already-downloaded raw PDFs are all handled.
@@ -52,7 +52,10 @@ POPPLER_BIN = "/opt/data/tools/poppler/usr/bin"
 POPPLER_LIB = "/opt/data/tools/poppler/usr/lib/x86_64-linux-gnu"
 URL = "https://hansard.parliament.nz/api/resources/daily/related/{d}/{d}-daily.pdf"
 UA = "nz-parliament-research-scraper/1.0 (personal research; low rate)"
-DEFAULT_FROM = "2024-11-20"
+# Full history: probe from 1990 and let the data speak — dates where the
+# daily-PDF scheme has no document (non-sitting days, or years before the
+# scheme existed) 404 and land in state as no-PDF days.
+DEFAULT_FROM = "1990-01-01"
 RETRIES = 2
 
 
@@ -98,6 +101,7 @@ def done_urls():
 def fetch_pdf(url):
     """(status, body). PDFs bypass the WAF — no browser needed."""
     for attempt in range(RETRIES + 1):
+        time.sleep(0.2)          # polite pacing across the back run
         try:
             req = urllib.request.Request(url, headers={"User-Agent": UA})
             with urllib.request.urlopen(req, timeout=60) as r:
@@ -109,7 +113,7 @@ def fetch_pdf(url):
         except Exception as e:  # noqa: BLE001 — transient network, retry
             last = e
         if attempt < RETRIES:
-            time.sleep(3)
+            time.sleep(10)
     return 0, str(last).encode()
 
 
