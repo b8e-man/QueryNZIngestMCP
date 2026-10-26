@@ -327,8 +327,15 @@ class Corpus:
     def _load_records(self):
         path = self.cfg.get("record_file")
         for row in self._read_new(path):
-            text = " ".join(str(v) for v in row.values() if isinstance(v, str))
-            rec = self._row_to_rec(row, WS_RE.sub(" ", text))
+            raw = row.get("text")
+            # rows that already carry a text field reuse it as the search
+            # text (same object — no duplicate of a 300KB body in RAM)
+            if isinstance(raw, str):
+                text = raw
+            else:
+                text = " ".join(str(v) for v in row.values()
+                                if isinstance(v, str))
+            rec = self._row_to_rec(row, text)
             if rec["id"] in self._by_id:
                 continue                 # duplicate id: first record wins
             self._append(rec)
@@ -354,7 +361,11 @@ class Corpus:
 
 CFG = yaml.safe_load(open(CONFIG))
 MEASURE_CFG = CFG.get("measure", {})
-CORPORA = {n: Corpus(n, c) for n, c in CFG["corpora"].items()}
+CORPORA = {}
+for _n, _c in CFG["corpora"].items():
+    CORPORA[_n] = Corpus(_n, _c)
+    import gc
+    gc.collect()          # big corpora: free parse transients before the next
 
 mcp = MCPServer(
     name="query-nz-ingest",

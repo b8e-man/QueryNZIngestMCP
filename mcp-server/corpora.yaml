@@ -76,7 +76,7 @@ corpora:
     freshness_sla_hours: 72
 
   parliament-hansard-index:
-    label: "Hansard PDF index (parliament.nz)"
+    label: "Parliament.nz pb sitemap pages (order papers, committees, info — NOT transcripts)"
     source_category: parliamentary-record
     kind: records
     id_field: url
