@@ -22,6 +22,7 @@ ticks. Output: data/api_queue/{corpus}.jsonl. Silent on success.
 import argparse
 import base64
 import json
+import fcntl
 import os
 import secrets
 import sys
@@ -126,6 +127,13 @@ def main():
     args = ap.parse_args()
 
     os.makedirs(OUT_DIR, exist_ok=True)
+    # single writer: cron ticks and manual runs must never interleave
+    lock_f = open(STATE_F + ".lock", "w")
+    try:
+        fcntl.flock(lock_f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit(0)                      # another drain is running — skip
+
     state = {}
     if os.path.exists(STATE_F):
         state = json.load(open(STATE_F))
@@ -172,6 +180,7 @@ def main():
 
         seen = None          # lazy: the 683k-row dedupe load only if pages write
         got = 0
+        dup_streak = 0
         cur_year = (f"{datetime.now(timezone.utc).year}-01-01.."
                     f"{datetime.now(timezone.utc).year}-12-31")
         shard_list = list(cstate["shards"].items())
@@ -200,6 +209,7 @@ def main():
                 if items:
                     if seen is None:
                         seen = load_seen(name)
+                    new_rows = 0
                     with open(out_f, "a") as f:
                         for it in items:
                             if it.get("id") in seen:
@@ -211,6 +221,8 @@ def main():
                                 timespec="seconds")
                             f.write(json.dumps(it, ensure_ascii=False) + "\n")
                             got += 1
+                            new_rows += 1
+                    dup_streak = 0 if new_rows else dup_streak + 1
                     cstate["shards"][label] = page
                     with open(STATE_F, "w") as f:
                         json.dump(state, f)
@@ -219,6 +231,14 @@ def main():
                         cstate.setdefault("done", []).append(label)
                         with open(STATE_F, "w") as f:
                             json.dump(state, f)
+                    break
+                if dup_streak >= 3:
+                    # static-window search: the API re-serves the same rows.
+                    # Rewind so the next tick re-scans the window head (where
+                    # new arrivals land) instead of paging into dead space.
+                    cstate["shards"][label] = 0
+                    with open(STATE_F, "w") as f:
+                        json.dump(state, f)
                     break
                 page += 1
                 time.sleep(SLEEP)

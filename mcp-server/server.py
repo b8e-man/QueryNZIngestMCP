@@ -328,7 +328,10 @@ class Corpus:
         path = self.cfg.get("record_file")
         for row in self._read_new(path):
             text = " ".join(str(v) for v in row.values() if isinstance(v, str))
-            self._append(self._row_to_rec(row, WS_RE.sub(" ", text)))
+            rec = self._row_to_rec(row, WS_RE.sub(" ", text))
+            if rec["id"] in self._by_id:
+                continue                 # duplicate id: first record wins
+            self._append(rec)
 
     # -- freshness (data-about-the-data, computed from internal timestamps) --
     def freshness(self) -> dict:
