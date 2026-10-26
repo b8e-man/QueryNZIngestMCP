@@ -18,6 +18,7 @@ Transport: MCP Streamable HTTP on 0.0.0.0:8646/mcp (see corpora.yaml).
 Metering: every tool call is appended to metering.jsonl (per-call).
 """
 
+import bisect
 import hashlib
 import json
 import math
@@ -50,6 +51,12 @@ HIDDEN_FIELDS = {
 def clean(row: dict) -> dict:
     return {k: v for k, v in row.items()
             if not k.startswith("_") and k not in HIDDEN_FIELDS}
+
+
+# Field names that hold the database's text bodies (dropped from
+# include_text=false responses; long strings are dropped by heuristic too).
+TEXT_FIELD_KEYS = {"text", "body_text", "body", "content", "html",
+                   "questionText", "answerText"}
 
 
 def strip_html(html: str) -> str:
@@ -110,43 +117,93 @@ class Corpus:
         self.name = name
         self.cfg = cfg
         self.records = []          # [{seq, id, date, title, text, fields, arrived}]
-        self._mtimes = {}
+        self._by_id = {}           # id -> record (in self.records)
+        self._content = {}         # id -> record built by the extracted pass
+        self._seen = set()         # ids in self.records
+        self._offs = {}            # file -> byte offset consumed
+        self._src = {}             # file -> (size, mtime) at last read
+        self._gen = 0              # bumped whenever the index changes
+        self._fresh_cache = None
         self._lock = threading.Lock()
         self.reload(force=True)
 
-    def _stat(self) -> dict:
-        out = {}
-        for key in ("extracted_file", "captures_file", "record_file"):
-            p = self.cfg.get(key)
-            if p and os.path.exists(p):
-                out[key] = os.path.getmtime(p)
-        return out
+    def _files(self):
+        return [p for p in (self.cfg.get("extracted_file"),
+                            self.cfg.get("captures_file"),
+                            self.cfg.get("record_file")) if p]
+
+    def _needs_rebuild(self) -> bool:
+        for p in self._files():
+            try:
+                st = os.stat(p)
+            except OSError:
+                continue
+            prev = self._src.get(p)
+            if prev is None:
+                return True                      # newly appeared file
+            psize, pmtime = prev
+            if st.st_size < psize or (st.st_size == psize
+                                      and st.st_mtime != pmtime):
+                return True                      # rewritten / truncated
+        return False
+
+    def _has_new_bytes(self) -> bool:
+        for p in self._files():
+            try:
+                if os.path.getsize(p) != self._offs.get(p, 0):
+                    return True
+            except OSError:
+                continue
+        return False
+
+    def _reset(self):
+        self.records = []
+        self._by_id = {}
+        self._content = {}
+        self._seen = set()
+        self._offs = {}
 
     def reload(self, force: bool = False):
-        if not force and self._stat() == self._mtimes:
-            return
         with self._lock:
-            self._mtimes = self._stat()
+            if not force and not self._needs_rebuild() \
+                    and not self._has_new_bytes():
+                return
+            if self._needs_rebuild():
+                self._reset()
             if self.cfg.get("kind") == "docs":
-                recs = self._load_docs()
+                self._load_docs()
             else:
-                recs = self._load_records()
-            for i, r in enumerate(recs):
-                r["seq"] = i
-            self.records = recs
+                self._load_records()
+            self._gen += 1
+            self._fresh_cache = None
 
-    def _load_jsonl(self, path: str):
+    def _read_new(self, path):
+        """Rows appended to an append-only JSONL file since the last read."""
         if not path or not os.path.exists(path):
             return
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    yield json.loads(line)
-                except ValueError:
-                    continue
+        try:
+            st = os.stat(path)
+        except OSError:
+            return
+        off = self._offs.get(path, 0)
+        self._src[path] = (st.st_size, st.st_mtime)
+        if st.st_size <= off:
+            return
+        with open(path, "rb") as f:
+            f.seek(off)
+            data = f.read()
+        cut = data.rfind(b"\n")
+        if cut < 0:                              # incomplete trailing line
+            return
+        self._offs[path] = off + cut + 1
+        for line in data[:cut + 1].split(b"\n"):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                yield json.loads(line)
+            except ValueError:
+                continue
 
     def _row_to_rec(self, row: dict, text: str, arrived: str = "") -> dict:
         rid = str(row.get(self.cfg["id_field"]) or row.get("url")
@@ -163,77 +220,108 @@ class Corpus:
                                       or row.get("fetched") or ""),
         }
 
+    def _append(self, rec: dict) -> dict:
+        rec["seq"] = len(self.records)
+        self.records.append(rec)
+        self._by_id[rec["id"]] = rec
+        self._seen.add(rec["id"])
+        return rec
+
+    def _update(self, rec: dict, row: dict):
+        old = self._by_id[rec["id"]]
+        old["date"], old["title"] = rec["date"], rec["title"]
+        old["text"], old["fields"] = rec["text"], rec["fields"]
+        old.pop("_words", None)
+        if rec.get("arrived"):
+            old["arrived"] = rec["arrived"]
+
     def _load_docs(self):
         pages = self.cfg.get("pages_dir")
-        content = {}
-        for row in self._load_jsonl(self.cfg.get("extracted_file")):
+        raw_loaded = [0]          # page files read this reload (safety ceiling)
+
+        def raw_text(row):
+            parts = [str(row.get("title") or row.get("html_title") or "")]
+            if row.get("path") and pages and raw_loaded[0] < RAW_INDEX_CAP:
+                fpath = _resolve_page(pages, row["path"])
+                if fpath:
+                    with open(fpath, encoding="utf-8", errors="replace") as fh:
+                        parts.append(strip_html(fh.read()))
+                    raw_loaded[0] += 1
+            return WS_RE.sub(" ", " ".join(parts))
+
+        ext_path = self.cfg.get("extracted_file")
+        cap_path = self.cfg.get("captures_file") or ext_path
+        ext_rows = list(self._read_new(ext_path)) if ext_path else []
+        if cap_path == ext_path:
+            cap_rows = list(ext_rows)            # one file backs both passes
+        else:
+            cap_rows = list(self._read_new(cap_path)) if cap_path else []
+
+        staged = {}                              # id -> rec, awaiting position
+        for row in ext_rows:                     # pass 1: extracted (enrichment)
             status = row.get("status")
             if status is not None and status != "ok":
                 continue
             if (row.get("kind") and not row.get("body_text")
                     and not row.get("path")):
                 continue
-            parts = [str(row.get(k, "")) for k in ("title", "body_text", "html_title")]
+            parts = [str(row.get(k, "")) for k in ("title", "body_text",
+                                                   "html_title")]
             if not row.get("body_text") and row.get("path") and pages:
                 fpath = _resolve_page(pages, row["path"])
                 if fpath:
                     with open(fpath, encoding="utf-8", errors="replace") as fh:
                         parts.append(strip_html(fh.read()))
             rec = self._row_to_rec(row, WS_RE.sub(" ", " ".join(parts)))
-            content[rec["id"]] = rec
+            if rec["id"] in self._by_id:         # late extraction: enrich in
+                self._update(rec, row)           # place, position never moves
+            else:
+                staged[rec["id"]] = rec
 
-        ordered, seen = [], set()
-        raw_loaded = 0
-        for row in self._load_jsonl(self.cfg.get("captures_file")
-                                    or self.cfg.get("extracted_file")):
+        for row in cap_rows:                     # pass 2: captures (arrival)
             st, kind = row.get("status"), row.get("kind")
             if st is not None and st != "ok":
                 continue
             if kind in ("attempt", "cdx-failed"):
                 continue
             rid = str(row.get(self.cfg["id_field"]) or row.get("url") or "")
-            if not rid or rid in seen:
+            if not rid:
                 continue
-            rec = content.get(rid)
+            if rid in self._by_id:
+                if row.get("fetched_at"):
+                    self._by_id[rid]["arrived"] = row["fetched_at"]
+                continue
+            rec = staged.pop(rid, None)
             if rec is None:
-                # captured but not extracted: the record exists NOW, its body
-                # lives in the page store. Every captured document is a record.
-                parts = [str(row.get("title") or row.get("html_title") or "")]
-                if row.get("path") and pages and raw_loaded < RAW_INDEX_CAP:
-                    fpath = _resolve_page(pages, row["path"])
-                    if fpath:
-                        with open(fpath, encoding="utf-8", errors="replace") as fh:
-                            parts.append(strip_html(fh.read()))
-                        raw_loaded += 1
-                rec = self._row_to_rec(row, WS_RE.sub(" ", " ".join(parts)))
+                rec = self._row_to_rec(row, raw_text(row))
             if row.get("fetched_at"):
                 rec["arrived"] = row["fetched_at"]
-            ordered.append(rec)
-            seen.add(rid)
-        for rid, rec in content.items():
-            if rid not in seen:
-                ordered.append(rec)
-        return ordered
+            self._append(rec)
+
+        for rec in staged.values():              # pass 3: extracted-only tail
+            self._append(rec)
 
     def _load_records(self):
-        out = []
-        for row in self._load_jsonl(self.cfg.get("record_file")):
+        path = self.cfg.get("record_file")
+        for row in self._read_new(path):
             text = " ".join(str(v) for v in row.values() if isinstance(v, str))
-            out.append(self._row_to_rec(row, WS_RE.sub(" ", text)))
-        return out
+            self._append(self._row_to_rec(row, WS_RE.sub(" ", text)))
 
     # -- freshness (data-about-the-data, computed from internal timestamps) --
     def freshness(self) -> dict:
-        arr = sorted(r["arrived"] for r in self.records if r.get("arrived"))
+        if self._fresh_cache is None or self._fresh_cache[0] != self._gen:
+            arr = sorted(r["arrived"] for r in self.records if r.get("arrived"))
+            dates = sorted(r["date"] for r in self.records if r["date"])
+            self._fresh_cache = (self._gen, arr, dates)
+        _, arr, dates = self._fresh_cache
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(
             timespec="seconds")
-        dates = sorted(r["date"] for r in self.records if r["date"])
         return {
             "records": len(self.records),
             "ingest_cursor": len(self.records),
             "date_from": dates[0] if dates else None,
             "date_to": dates[-1] if dates else None,
-            "arrivals_last_24h": sum(1 for a in arr if a > cutoff),
+            "arrivals_last_24h": len(arr) - bisect.bisect_right(arr, cutoff),
             "newest_arrival": arr[-1] if arr else None,
         }
 
@@ -263,6 +351,12 @@ def _rec_out(r: dict, include_text: bool = True) -> dict:
         out["date"] = r["date"]
     if include_text:
         out["text"] = r["text"]
+        return out
+    # metadata-only pass: the database's texts stay behind
+    for k in list(out):
+        v = out[k]
+        if k in TEXT_FIELD_KEYS or (isinstance(v, str) and len(v) > 300):
+            del out[k]
     return out
 
 
@@ -331,6 +425,7 @@ def search(query: str, corpus: str | None = None, date_from: str | None = None,
         res = _search_mint(corpus[5:], terms, date_from, date_to, limit, offset, t0)
         return res
     hits = []
+    rxs = [re.compile(re.escape(t), re.I) for t in terms]
     names = [corpus] if corpus else list(CORPORA)
     for name in names:
         c = _fresh(name)
@@ -340,8 +435,7 @@ def search(query: str, corpus: str | None = None, date_from: str | None = None,
                 continue
             if date_to and d and d > _parse_ymd(date_to):
                 continue
-            text_l = rec["text"].lower()
-            if not all(t in text_l for t in terms):
+            if not all(rx.search(rec["text"]) for rx in rxs):
                 continue
             hits.append({"corpus": name, "seq": rec["seq"], "id": rec["id"],
                          "date": d or None, "title": rec["title"] or None,
@@ -366,6 +460,7 @@ def _search_mint(name, terms, date_from, date_to, limit, offset, t0):
         return {"error": f"no minted subset named {name!r}", "minted_subsets": _load_minted()}
     ids = set(mint.get("included_ids", []))
     hits = []
+    rxs = [re.compile(re.escape(t), re.I) for t in terms]
     for cname, idsel in mint.get("corpus_ids", {}).items():
         c = _fresh(cname)
         sel = set(idsel)
@@ -377,8 +472,7 @@ def _search_mint(name, terms, date_from, date_to, limit, offset, t0):
                 continue
             if date_to and d and d > _parse_ymd(date_to):
                 continue
-            text_l = rec["text"].lower()
-            if terms and not all(t in text_l for t in terms):
+            if not all(rx.search(rec["text"]) for rx in rxs):
                 continue
             hits.append({"corpus": cname, "seq": rec["seq"], "id": rec["id"],
                          "date": d or None, "title": rec["title"] or None,
@@ -431,6 +525,7 @@ def measure(keywords: list[str], corpora_filter: list[str] | None = None,
     if measure_kind not in ("count", "rate", "salience"):
         return {"error": "measure_kind must be count|rate|salience"}
     kws = [k.lower() for k in keywords]
+    kws_rx = [re.compile(re.escape(k), re.I) for k in kws]
     names = ([n for n in corpora_filter if n in CORPORA]
              if corpora_filter else list(CORPORA))
     stats = {}
@@ -449,17 +544,19 @@ def measure(keywords: list[str], corpora_filter: list[str] | None = None,
                 continue
             if date_to and d and d > _parse_ymd(date_to):
                 continue
-            text_l = rec["text"].lower()
+            w = rec.get("_words")
+            if w is None:
+                w = len(rec["text"].split())
+                rec["_words"] = w
             hits = {}
-            for k in kws:
-                n = text_l.count(k)
+            for rx, k in zip(kws_rx, kws):
+                n = sum(1 for _ in rx.finditer(rec["text"]))
                 if n:
                     dmap[k] += n
                     hits[k] = n
             if hits:
-                docs[rec["id"]] = {"hits": hits,
-                                   "words": len(rec["text"].split())}
-            words += len(rec["text"].split())
+                docs[rec["id"]] = {"hits": hits, "words": w}
+            words += w
             n_docs += 1
         stats[name] = {"counts": dmap, "words": words, "n_docs": n_docs}
         per_doc[name] = docs
