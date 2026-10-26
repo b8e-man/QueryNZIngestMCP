@@ -3,8 +3,10 @@
 
 Design rules:
 - The server reports WHAT the database holds: records, counts, date ranges,
-  freshness, statistics. How records were acquired or processed is internal
-  and is never returned.
+  freshness, statistics — and per-record capture provenance (as-received
+  hash, fetch time, HTTP status). Model-made fields carry an `annotation`
+  block naming them and their generator; `updated_at` moves when a record
+  is re-processed.
 - Consumers are expected to ingest the ENTIRE corpus through this interface.
   `records` paginates in stable arrival order with a resumable cursor — the
   bulk-ingestion path.
@@ -40,17 +42,10 @@ RAW_INDEX_CAP = 120000       # safety ceiling only; never reached (queue < 70k)
 TAG_RE = re.compile(r"<(script|style)[^>]*>[\s\S]*?</\1>|<[^>]+>", re.I)
 WS_RE = re.compile(r"\s+")
 
-# Internal plumbing — never returned to consumers, regardless of source file.
-HIDDEN_FIELDS = {
-    "sha256", "source_file", "model", "extracted_at", "fetched_at",
-    "snapshot_url", "bytes", "content_encoding", "status", "path",
-    "raw_file", "source_url", "ts_fetched",
-}
-
-
-def clean(row: dict) -> dict:
-    return {k: v for k, v in row.items()
-            if not k.startswith("_") and k not in HIDDEN_FIELDS}
+# Model-made fields — flagged in a per-record `annotation` block so consumers
+# store them as annotation, never as fact (regex-derived fields are not
+# flagged). Ruling: capture provenance and processing metadata are EXPOSED.
+ANNOTATION_FIELDS = {"topics", "quotes"}
 
 
 # Field names that hold the database's text bodies (dropped from
@@ -208,17 +203,27 @@ class Corpus:
     def _row_to_rec(self, row: dict, text: str, arrived: str = "") -> dict:
         rid = str(row.get(self.cfg["id_field"]) or row.get("url")
                   or hashlib.sha256(json.dumps(row, sort_keys=True).encode()).hexdigest()[:16])
-        return {
+        rec = {
             "id": rid,
             "date": norm_date(row.get(self.cfg["date_field"])),
             "title": str(row.get(self.cfg.get("title_field", "")) or "")[:300],
             "text": text,
-            "fields": clean(row),
+            "fields": dict(row),
             "arrived": arrived or str(row.get("fetched_at")
                                       or row.get("_fetched_at")
                                       or row.get("_collected")
                                       or row.get("fetched") or ""),
+            # when this version of the record landed (source-provided stamps)
+            "updated_at": str(row.get("extracted_at") or row.get("fetched_at")
+                              or row.get("_collected") or row.get("fetched")
+                              or row.get("lastModified") or ""),
         }
+        ann = sorted(k for k in ANNOTATION_FIELDS if row.get(k))
+        if ann and row.get("model"):
+            rec["annotation"] = {"fields": ann,
+                                 "generator": str(row.get("model")),
+                                 "created_at": str(row.get("extracted_at") or "")}
+        return rec
 
     def _append(self, rec: dict) -> dict:
         rec["seq"] = len(self.records)
@@ -231,6 +236,9 @@ class Corpus:
         old = self._by_id[rec["id"]]
         old["date"], old["title"] = rec["date"], rec["title"]
         old["text"], old["fields"] = rec["text"], rec["fields"]
+        old["updated_at"] = rec.get("updated_at") or now_iso()
+        if rec.get("annotation"):
+            old["annotation"] = rec["annotation"]
         old.pop("_words", None)
         if rec.get("arrived"):
             old["arrived"] = rec["arrived"]
@@ -288,14 +296,17 @@ class Corpus:
             if not rid:
                 continue
             if rid in self._by_id:
+                old = self._by_id[rid]
                 if row.get("fetched_at"):
-                    self._by_id[rid]["arrived"] = row["fetched_at"]
+                    old["arrived"] = row["fetched_at"]
+                old["capture"] = dict(row)
                 continue
             rec = staged.pop(rid, None)
             if rec is None:
                 rec = self._row_to_rec(row, raw_text(row))
             if row.get("fetched_at"):
                 rec["arrived"] = row["fetched_at"]
+            rec["capture"] = dict(row)   # provenance: as-received, unfaked
             self._append(rec)
 
         for rec in staged.values():              # pass 3: extracted-only tail
@@ -335,9 +346,11 @@ mcp = MCPServer(
     version="0.2.0",
     instructions=("The contents of NZ government-publication corpora: records, "
                   "counts, date ranges, freshness and statistics. Consumers may "
-                  "ingest the full corpus via the `records` tool (stable arrival "
-                  "order, resumable cursor; new records land at the end). Nothing "
-                  "about acquisition or processing is exposed."))
+                  "ingest the full corpus through the `records` tool (stable arrival "
+                  "order, resumable cursor; new records land at the end). Each record "
+                  "carries capture provenance (as-received hash, fetch time, HTTP "
+                  "status); model-made fields are named in an `annotation` block; "
+                  "`updated_at` moves when a record changes."))
 
 
 def _fresh(name: str) -> Corpus:
@@ -349,6 +362,12 @@ def _rec_out(r: dict, include_text: bool = True) -> dict:
     out = {"seq": r["seq"], "id": r["id"], **r["fields"]}
     if r["date"] and "date" not in out:
         out["date"] = r["date"]
+    if r.get("updated_at"):
+        out["updated_at"] = r["updated_at"]
+    if r.get("capture"):
+        out["capture"] = r["capture"]
+    if r.get("annotation"):
+        out["annotation"] = r["annotation"]
     if include_text:
         out["text"] = r["text"]
         return out
@@ -394,7 +413,8 @@ def records(corpus: str, cursor: int = 0, limit: int = 50,
     equals `ingest_cursor` from `corpora()`, the consumer has everything —
     poll `corpora()` for fresh arrivals, then call again with the saved
     cursor to pull only what landed since. Record fields are the database's
-    own; set include_text=false for a metadata-only pass."""
+    own; each carries capture provenance and, where fields are model-made,
+    an annotation block. Set include_text=false for a metadata-only pass."""
     t0 = time.time()
     if corpus not in CORPORA:
         return {"error": f"unknown corpus {corpus!r}", "available": list(CORPORA)}
