@@ -47,6 +47,14 @@ WS_RE = re.compile(r"\s+")
 # flagged). Ruling: capture provenance and processing metadata are EXPOSED.
 ANNOTATION_FIELDS = {"topics", "quotes"}
 
+# Capture-provenance keys gathered into a uniform `capture` block (rows that
+# have no separate capture layer — API/aggregator corpora — carry whatever
+# of this they recorded; key names are never invented).
+CAPTURE_KEYS = ("url", "final_url", "source_url", "snapshot_url",
+                "fetched_at", "fetched", "_collected", "http_status",
+                "status", "sha256", "raw_file", "path", "source_file",
+                "bytes", "ts")
+
 
 # Field names that hold the database's text bodies (dropped from
 # include_text=false responses; long strings are dropped by heuristic too).
@@ -223,6 +231,10 @@ class Corpus:
             rec["annotation"] = {"fields": ann,
                                  "generator": str(row.get("model")),
                                  "created_at": str(row.get("extracted_at") or "")}
+        cap = {k: row[k] for k in CAPTURE_KEYS
+               if k in row and row[k] not in (None, "")}
+        if cap:
+            rec["capture"] = cap
         return rec
 
     def _append(self, rec: dict) -> dict:
@@ -369,7 +381,7 @@ def _rec_out(r: dict, include_text: bool = True) -> dict:
     if r.get("annotation"):
         out["annotation"] = r["annotation"]
     if include_text:
-        out["text"] = r["text"]
+        out["text"] = r["fields"].get("text") or r["text"]
         return out
     # metadata-only pass: the database's texts stay behind
     for k in list(out):
@@ -426,6 +438,31 @@ def records(corpus: str, cursor: int = 0, limit: int = 50,
     meter("records", {"corpus": corpus, "cursor": cursor}, len(out),
           (time.time() - t0) * 1000)
     return {"corpus": corpus, "total": len(c.records),
+            "cursor": cursor, "next_cursor": cursor + len(out),
+            "records": out}
+
+
+@mcp.tool()
+def changes(corpus: str, since: str, cursor: int = 0, limit: int = 100,
+            include_text: bool = True) -> dict:
+    """READ (change feed). Everything that moved after `since` — fresh
+    arrivals AND records whose `updated_at` moved (re-processing) — in
+    (updated_at, seq) order, paginated like `records`. `since` is an ISO
+    stamp taken from a previous response's updated_at. Page with
+    `next_cursor` until empty, then poll again with the newest updated_at
+    seen as the next `since`."""
+    t0 = time.time()
+    if corpus not in CORPORA:
+        return {"error": f"unknown corpus {corpus!r}", "available": list(CORPORA)}
+    c = _fresh(corpus)
+    lim = max(1, min(int(limit), 200))
+    cursor = max(0, int(cursor))
+    sel = sorted((r for r in c.records if r["updated_at"] > since),
+                 key=lambda r: (r["updated_at"], r["seq"]))
+    page = sel[cursor:cursor + lim]
+    out = [_rec_out(r, include_text) for r in page]
+    meter("changes", {"corpus": corpus}, len(out), (time.time() - t0) * 1000)
+    return {"corpus": corpus, "since": since, "total": len(sel),
             "cursor": cursor, "next_cursor": cursor + len(out),
             "records": out}
 
