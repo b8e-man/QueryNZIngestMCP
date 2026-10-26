@@ -50,18 +50,17 @@ BILLS_SHAPE = {
 
 CORPORA = [
     ("questions", "https://questions.parliament.nz/api/data/search",
-     "value", "@odata.count", False),
+     "value", "@odata.count", None),
     ("bills", "https://bills.parliament.nz/api/data/search",
-     "results", "totalResults", True),
-    ("ur-debates", "https://searches.parliament.nz/api/data/search/ur-debates",
-     "results", "totalResults", False),
-    ("estimates-of-appropriations",
-     "https://searches.parliament.nz/api/data/search/estimates-of-appropriations",
-     "results", "totalResults", False),
-    ("SOPs", "https://searches.parliament.nz/api/data/search/SOPs",
-     "results", "totalResults", False),
-    ("books", "https://searches.parliament.nz/api/data/search/books",
-     "results", "totalResults", False),
+     "results", "totalResults", BILLS_SHAPE),
+    ("bills-historical", "https://bills.parliament.nz/api/data/search",
+     "results", "totalResults", dict(BILLS_SHAPE, billTab="Historical")),
+    ("SOPs", "https://bills.parliament.nz/api/data/search",
+     "results", "totalResults", dict(BILLS_SHAPE, documentPreset=9)),
+    ("sc-reports", "https://bills.parliament.nz/api/data/search",
+     "results", "totalResults", dict(BILLS_SHAPE, documentPreset=14)),
+    ("sc-submissions", "https://bills.parliament.nz/api/data/search",
+     "results", "totalResults", dict(BILLS_SHAPE, documentPreset=10)),
 ]
 
 YEAR_SHARDS = [(f"{y}-01-01", f"{y}-12-31") for y in range(2026, 1989, -1)]
@@ -137,7 +136,7 @@ def main():
     report = []
     hard_fail = False
 
-    for name, url, items_key, total_key, full_shape in CORPORA:
+    for name, url, items_key, total_key, shape in CORPORA:
         if time.time() > deadline:
             break
         cstate = state.get(name, {})
@@ -146,7 +145,7 @@ def main():
 
         # discover total + shard plan on first touch
         if total is None:
-            probe = dict(BILLS_SHAPE) if full_shape else {}
+            probe = dict(shape) if shape else {}
             probe.update({"pageSize": 1, "page": 1})
             try:
                 resp = fetcher.post(url, probe, deadline)
@@ -171,13 +170,17 @@ def main():
                                 else {f"{a}..{b}": 0 for a, b in YEAR_SHARDS})
             state[name] = cstate
 
-        seen = load_seen(name)
+        seen = None          # lazy: the 683k-row dedupe load only if pages write
         got = 0
+        cur_year = (f"{datetime.now(timezone.utc).year}-01-01.."
+                    f"{datetime.now(timezone.utc).year}-12-31")
         shard_list = list(cstate["shards"].items())
         for label, pages_done in shard_list:
             if time.time() > deadline:
                 break
-            body = dict(BILLS_SHAPE) if full_shape else {}
+            if label in cstate.get("done", []) and label != cur_year:
+                continue          # exhausted archive shard — never re-probe
+            body = dict(shape) if shape else {}
             if label != "__all__":
                 a, b = label.split("..")
                 body.update({"dateFrom": a, "dateTo": b})
@@ -194,23 +197,28 @@ def main():
                     report.append(f"{name}[{label}]: fetch failed at page {page}: {e}")
                     break
                 items = resp.get(items_key) or []
-                if not items:
-                    break
-                with open(out_f, "a") as f:
-                    for it in items:
-                        if it.get("id") in seen:
-                            continue
-                        seen.add(it.get("id"))
-                        it["_corpus"] = name
-                        it["_shard"] = label
-                        it["_fetched_at"] = datetime.now(timezone.utc).isoformat(
-                            timespec="seconds")
-                        f.write(json.dumps(it, ensure_ascii=False) + "\n")
-                        got += 1
-                cstate["shards"][label] = page
-                with open(STATE_F, "w") as f:
-                    json.dump(state, f)
-                if len(items) < 100:
+                if items:
+                    if seen is None:
+                        seen = load_seen(name)
+                    with open(out_f, "a") as f:
+                        for it in items:
+                            if it.get("id") in seen:
+                                continue
+                            seen.add(it.get("id"))
+                            it["_corpus"] = name
+                            it["_shard"] = label
+                            it["_fetched_at"] = datetime.now(timezone.utc).isoformat(
+                                timespec="seconds")
+                            f.write(json.dumps(it, ensure_ascii=False) + "\n")
+                            got += 1
+                    cstate["shards"][label] = page
+                    with open(STATE_F, "w") as f:
+                        json.dump(state, f)
+                if len(items) < 100:          # shard exhausted (empty page too)
+                    if label not in ("__all__", cur_year):
+                        cstate.setdefault("done", []).append(label)
+                        with open(STATE_F, "w") as f:
+                            json.dump(state, f)
                     break
                 page += 1
                 time.sleep(SLEEP)

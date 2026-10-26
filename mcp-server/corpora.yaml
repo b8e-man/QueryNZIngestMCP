@@ -94,3 +94,43 @@ corpora:
     title_field: title
     record_file: /opt/data/parliament-scraper/data/hansard_debates.jsonl
     freshness_sla_hours: 168
+
+  parliament-bills-historical:
+    label: "Parliament bills (historical)"
+    source_category: parliamentary-record
+    kind: records
+    id_field: id
+    date_field: publicationDate
+    title_field: title
+    record_file: /opt/data/parliament-scraper/data/api_queue/bills-historical.jsonl
+    freshness_sla_hours: 24
+
+  parliament-sops:
+    label: "Supplementary order papers (amendments to bills)"
+    source_category: parliamentary-record
+    kind: records
+    id_field: id
+    date_field: publicationDate
+    title_field: title
+    record_file: /opt/data/parliament-scraper/data/api_queue/SOPs.jsonl
+    freshness_sla_hours: 24
+
+  parliament-sc-reports:
+    label: "Select committee reports"
+    source_category: parliamentary-record
+    kind: records
+    id_field: id
+    date_field: publicationDate
+    title_field: title
+    record_file: /opt/data/parliament-scraper/data/api_queue/sc-reports.jsonl
+    freshness_sla_hours: 24
+
+  parliament-sc-submissions:
+    label: "Select committee calls for submissions"
+    source_category: parliamentary-record
+    kind: records
+    id_field: id
+    date_field: publicationDate
+    title_field: title
+    record_file: /opt/data/parliament-scraper/data/api_queue/sc-submissions.jsonl
+    freshness_sla_hours: 24
