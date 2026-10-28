@@ -208,6 +208,11 @@ def main():
         for u in urls:
             if not u.startswith("/"):
                 continue
+            # CDX carries legacy '+slug' space-encoding; live beehive uses
+            # '-' and 404s every '+' form (measured 2026-10-28). Normalize at
+            # the source; keep the raw form for provenance.
+            u_raw = u
+            u = u.replace("+", "-")
             full = SITE + u
             k = norm(u)
             if k in seen or full in done_ok or full in queued:
@@ -215,8 +220,11 @@ def main():
             if attempts.get(full, 0) >= 3:
                 continue          # dead URL: tried 3x, stop retrying
             seen.add(k)
-            f.write(json.dumps({"url": full, "kind": "backfill",
-                                "source": "browse+cdx"}, ensure_ascii=False) + "\n")
+            rec = {"url": full, "kind": "backfill",
+                   "source": "browse+cdx"}
+            if u_raw != u:
+                rec["raw_url"] = SITE + u_raw
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             added += 1
 
     if added:

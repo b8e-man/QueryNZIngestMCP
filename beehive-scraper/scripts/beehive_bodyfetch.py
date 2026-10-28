@@ -20,11 +20,14 @@ Detection note: real Incapsula-fronted pages ALSO reference
 marker. The stub is identified by its tiny size + noindex meta / incident
 page markers.
 
-Retry semantics: done.jsonl status=="ok" is final; failed/challenged entries
-are retried on later runs (transient network drops, burned proxy exits).
+Retry semantics: done.jsonl status=="ok", "http_404" and "http_410" are
+final; other failed/challenged entries are retried on later runs (transient
+network drops, burned proxy exits), 3 attempts max.
 
 Exit semantics (cron no_agent): silent + exit 0 on success (or nothing to
-do); stderr + exit 1 on failure/challenge so the scheduler alerts.
+do); stderr + exit 1 ONLY on systemic trouble (a tick with zero successes
+but failures, or WAF challenges with no success) — terminal 404/410 and
+per-URL garbage outcomes never alert.
 
 Bandwidth: every run appends one line to logs/bodyfetch_stats.log with pages
 and bytes transferred (images/fonts/media/stylesheet blocked; JS needed for
@@ -93,7 +96,10 @@ def main():
         + f"_country-nz_session-{sess}_lifetime-30m",
     }
 
-    # only status=="ok" counts as done; failed/challenged are transient
+    # terminal outcomes: ok, and definitive dead pages (404/410 are the
+    # server's final answer — e.g. '+slug' URL variants that live beehive
+    # dropped; retrying them burned ~10K fetches, measured 2026-10-28).
+    # Everything else is transient: failed/challenged retried, 3 strikes max.
     done_urls = set()
     attempts = {}
     if os.path.exists(DONE_F):
@@ -101,7 +107,8 @@ def main():
             for line in f:
                 try:
                     rec = json.loads(line)
-                    if rec.get("status") == "ok":
+                    st = rec.get("status", "")
+                    if st == "ok" or st in ("http_404", "http_410"):
                         done_urls.add(rec["url"])
                     else:
                         attempts[rec["url"]] = attempts.get(rec["url"], 0) + 1
@@ -125,7 +132,7 @@ def main():
 
     batch = entries[:args.limit]
     t0 = time.time()
-    ok = challenged = failed = 0
+    ok = challenged = failed_net = failed_http = 0
     errors = []
     transfer = [0]
 
@@ -174,7 +181,7 @@ def main():
                     page.wait_for_timeout(1000)
                 if http_status >= 400:
                     status = f"http_{http_status}"
-                    failed += 1
+                    failed_http += 1
                 elif is_challenge(html):
                     status = "challenged"
                     challenged += 1
@@ -193,7 +200,7 @@ def main():
                     ok += 1
             except Exception as e:
                 status = f"failed: {e}"[:120]
-                failed += 1
+                failed_net += 1
                 errors.append(f"{url}: {e}"[:150])
             with open(DONE_F, "a") as f:
                 f.write(json.dumps({
@@ -209,12 +216,17 @@ def main():
     with open(STATS_F, "a") as f:
         f.write(f"{datetime.now(timezone.utc).isoformat(timespec='seconds')} "
                 f"queue={os.path.basename(args.queue)} ok={ok} challenged={challenged} "
-                f"failed={failed} transfer_bytes={transfer[0]}\n")
+                f"failed_net={failed_net} http4xx={failed_http} transfer_bytes={transfer[0]}\n")
 
     left = len(entries) - len(batch)
-    # single transient failures are retried later — alert only on real trouble
-    if failed >= 5 or (challenged and not ok):
-        print(f"beehive bodyfetch: {ok} ok, {challenged} challenged, {failed} failed, "
+    # 404/410 are terminal recorded outcomes (never trouble). Per-URL garbage
+    # (bad CDX slugs: 212-byte stubs, ERR_EMPTY_RESPONSE) churns through
+    # 3-strikes and dies bounded — it is URL trouble, not pipeline trouble.
+    # Alert ONLY on systemic conditions: nothing succeeded this tick, or the
+    # WAF is challenging without any success.
+    if (challenged and not ok) or (ok == 0 and (failed_net or challenged)):
+        print(f"beehive bodyfetch: {ok} ok, {challenged} challenged, "
+              f"{failed_net} net-failed, {failed_http} http-4xx (terminal), "
               f"{left} left in queue. Errors: {'; '.join(errors)}", file=sys.stderr)
         sys.exit(1)
     if challenged:
