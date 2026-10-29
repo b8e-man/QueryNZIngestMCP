@@ -7,14 +7,15 @@ RC=$?
 if [ $RC -ne 0 ]; then
   echo "court-cdx discover exited $RC:"; echo "$OUT"; exit 1
 fi
-if echo "$OUT" | grep -q "nothing to do"; then
-  exit 0   # fully discovered — silent
-fi
-ADDED=$(echo "$OUT" | grep -oP 'added=\K[0-9]+' | tail -1)
-FAILED=$(echo "$OUT" | grep -c "failed:")
+OUT2=$(python3 discover_tribunals.py 2>&1)
+RC2=$?
+BOTH="$OUT
+$OUT2"
+ADDED=$(echo "$BOTH" | grep -oP 'added=\K[0-9]+' | awk '{s+=$1} END {print s}')
+FAILED=$(echo "$BOTH" | grep -c "failed:\|attempt 3:")
 if [ "${ADDED:-0}" -gt 0 ]; then
-  echo "court-cdx: ${ADDED} new case URLs queued."; echo "$OUT"
-elif [ "$FAILED" -gt 0 ]; then
-  echo "court-cdx: 0 added, ${FAILED} prefixes still failing (Wayback CDX degraded):"; echo "$OUT"
+  echo "court-cdx: ${ADDED} new URLs queued."; echo "$BOTH"
+elif [ "$RC2" -ne 0 ] || [ "$FAILED" -gt 0 ]; then
+  echo "court-cdx: 0 added, ${FAILED} prefix failures (Wayback CDX degraded):"; echo "$BOTH"
 fi
 exit 0

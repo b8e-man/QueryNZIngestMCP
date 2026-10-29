@@ -48,6 +48,32 @@ SLUG_RE = re.compile(r"/cases/([^/?#]+)")
 
 TERMINAL = ("ok", "http_404", "http_410")
 SLEEP = 1.0        # politeness between requests (govt site, ~1 req/s max)
+# justice.govt.nz /robots.txt disallows /assets/ — user directed direct fetch
+# anyway ("proceed politely anyway"): extra-gentle cadence for that host.
+POLITE_SLEEP = {"www.justice.govt.nz": 2.5, "justice.govt.nz": 2.5}
+COURT_BY_HOST = {
+    "www.justice.govt.nz": "tribunals",
+    "justice.govt.nz": "tribunals",
+    "www.employmentcourt.govt.nz": "employment-court",
+    "employmentcourt.govt.nz": "employment-court",
+    "www.environmentcourt.govt.nz": "environment-court",
+    "environmentcourt.govt.nz": "environment-court",
+    "coronerscourt.govt.nz": "coroners-court",
+}
+YEAR_RE = re.compile(r"(19|20)\d{2}")
+
+
+def polite_sleep(url):
+    host = urllib.parse.urlparse(url).netloc
+    time.sleep(POLITE_SLEEP.get(host, SLEEP))
+
+
+def year_of(*parts):
+    for p in parts:
+        m = YEAR_RE.search(p)
+        if m:
+            return m.group(0)
+    return "unknown"
 
 
 def now_iso():
@@ -156,7 +182,38 @@ def main():
     for url in batch:
         if time.time() > deadline:
             break
-        time.sleep(SLEEP)
+        polite_sleep(url)
+
+        # ---- direct PDF queue entries (tribunal/court CDX seeds) ----
+        if urllib.parse.urlparse(url).path.lower().endswith(".pdf"):
+            try:
+                st, pb, pct = fetch(url, timeout=60)
+                if st in (404, 410):
+                    record_done(url, f"http_{st}")
+                    continue
+                if st != 200:
+                    failed += 1
+                    fails.append(f"{url}: http_{st}")
+                    record_done(url, f"http_{st}")
+                    continue
+                fname = urllib.parse.unquote(url.rstrip("/").split("/")[-1])
+                court = COURT_BY_HOST.get(urllib.parse.urlparse(url).netloc, "")
+                year = year_of(fname, url)
+                rel = os.path.join("pdfs", court or "misc", year, fname)
+                os.makedirs(os.path.dirname(os.path.join(BASE, "data", rel)),
+                            exist_ok=True)
+                with open(os.path.join(BASE, "data", rel), "wb") as f:
+                    f.write(pb)
+                record_doc(url, "judgment_pdf", pb, pct, rel,
+                           "", court, "cdx_index")
+                record_done(url, "ok", sha256=hashlib.sha256(pb).hexdigest())
+                added_docs += 1
+            except Exception as e:
+                failed += 1
+                fails.append(f"{url}: {e}"[:120])
+                record_done(url, f"failed: {e}"[:100])
+            continue
+
         slug_m = SLUG_RE.search(url)
         slug = slug_m.group(1) if slug_m else url.rstrip("/").split("/")[-1]
         try:
@@ -184,11 +241,11 @@ def main():
             for href in PDF_RE.findall(html):
                 if time.time() > deadline:
                     break
-                time.sleep(SLEEP)
                 purl = urllib.parse.urljoin(SITE, href)
                 if purl in seen_pdfs or terminal(purl):
                     continue
                 seen_pdfs.add(purl)
+                polite_sleep(purl)
                 try:
                     st, pb, pct = fetch(purl, timeout=60)
                     if st != 200:
