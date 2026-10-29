@@ -36,11 +36,11 @@ PDFS = os.path.join(BASE, "data", "pdfs")
 LOGS = os.path.join(BASE, "logs", "tick.log")
 
 SITE = "https://www.courtsofnz.govt.nz"
-FEEDS = {
-    "supreme-court": SITE + "/judgments/supreme-court/RSS",
-    "court-of-appeal": SITE + "/judgments/court-of-appeal/RSS",
-    "high-court": SITE + "/judgments/high-court/RSS",
-}
+# PARKED 2026-10-29: RSS freshness superseded by the JDO JSON ticker
+# (jdo_new.py — upstream of courtsofnz's selection, ALL courts). The tick
+# survives as the shared queue drain for every lane (courtsofnz backfill,
+# tribunals, JDO PDFs). Restore the feeds dict to re-enable RSS discovery.
+FEEDS = {}
 UA = ("Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 "
       "Firefox/128.0 (Query NZ corpus capture; contact arthur@betelgeuse.co.nz)")
 PDF_RE = re.compile(r'href="([^"]+\.pdf[^"]*)"')
