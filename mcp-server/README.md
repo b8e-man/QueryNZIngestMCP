@@ -68,7 +68,9 @@ whatever the corpus holds) plus `seq` (the arrival-order position — the
 cursor anchor) and `id`. Capture provenance (hashes, fetch timestamps, HTTP
 status, raw-file paths) is exposed in a `capture` block; model-made fields
 are named in an `annotation` block with their generator. `updated_at` moves
-when a record is re-processed.
+when a record is re-processed. Corpora that declare a `path_root` also carry
+`file` — the absolute path to the captured bytes on the host (the raw
+relative `path` stays exactly as-received).
 
 ## Consumer ingestion pattern
 
@@ -99,7 +101,7 @@ One full pass, then incremental forever. Fresh arrivals show up as
 
 - `corpora.yaml` — which corpora are mounted, where their files live, date/id
   field mapping (edit to mount a new corpus; no code changes)
-- `server.py` — the five tools (mcp SDK v2, MCPServer, streamable-http)
+- `server.py` — the seven tools (mcp SDK v2, MCPServer, streamable-http)
 - `README.md` — this
 - runtime state (never committed): `metering.jsonl`, `minted_corpora.jsonl`,
   `server.log`, `.venv/`

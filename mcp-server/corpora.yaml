@@ -145,6 +145,7 @@ corpora:
     title_field: [case_name, case_slug, url]
     doc_type_field: kind          # judgment_pdf | media_release | case_page
     record_file: /opt/data/court-scraper/records.jsonl
+    path_root: /opt/data/court-scraper/data   # resolves relative `path` -> absolute `file`
     freshness_sla_hours: 24
 
 # The `gaps` tool: completeness measurement against the NZLII comparison

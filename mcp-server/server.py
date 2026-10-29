@@ -239,6 +239,10 @@ class Corpus:
                if k in row and row[k] not in (None, "")}
         if cap:
             rec["capture"] = cap
+        proot = self.cfg.get("path_root")
+        if proot and row.get("path"):
+            # resolution aid only — the raw `path` stays as-received in fields/capture
+            rec["file"] = os.path.join(proot, str(row["path"]).lstrip("/"))
         return rec
 
     def _append(self, rec: dict) -> dict:
@@ -258,6 +262,8 @@ class Corpus:
         old.pop("_words", None)
         if rec.get("arrived"):
             old["arrived"] = rec["arrived"]
+        if rec.get("file"):
+            old["file"] = rec["file"]
 
     def _load_docs(self):
         pages = self.cfg.get("pages_dir")
@@ -396,6 +402,8 @@ def _rec_out(r: dict, include_text: bool = True) -> dict:
         out["updated_at"] = r["updated_at"]
     if r.get("capture"):
         out["capture"] = r["capture"]
+    if r.get("file"):
+        out["file"] = r["file"]
     if r.get("annotation"):
         out["annotation"] = r["annotation"]
     if include_text:
