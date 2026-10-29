@@ -70,6 +70,7 @@ def main():
     known = queued | done
 
     added = seen = 0
+    names = {}          # url -> case_name, for backfilling stripped records
     page = 1
     while True:
         qs = urllib.parse.urlencode({
@@ -90,6 +91,7 @@ def main():
             if not u.lower().endswith(".pdf"):
                 continue
             u = urllib.parse.urljoin("https://www.justice.govt.nz", u)
+            names[u] = r.get("caseName", "")
             if u not in known:
                 new.append({"url": u, "source": "jdo_api",
                             "case_name": r.get("caseName", "")})
@@ -103,6 +105,25 @@ def main():
             break
         page += 1
         time.sleep(1.5)
+
+    # backfill case_name into queue records that lost it (the capture tick's
+    # flush stripped fields before 2026-10-29; kept intact since)
+    if names and os.path.exists(QUEUE_F):
+        changed = 0
+        with open(QUEUE_F) as f:
+            recs = [json.loads(l) for l in f if l.strip()]
+        for rec in recs:
+            if rec.get("url") in names:
+                if not rec.get("case_name"):
+                    rec["case_name"] = names[rec["url"]]
+                    changed += 1
+                if not rec.get("source"):
+                    rec["source"] = "jdo_api"
+                    changed += 1
+        if changed:
+            with open(QUEUE_F, "w") as f:
+                for rec in recs:
+                    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
     os.makedirs(os.path.dirname(LOGS), exist_ok=True)
     with open(LOGS, "a") as f:

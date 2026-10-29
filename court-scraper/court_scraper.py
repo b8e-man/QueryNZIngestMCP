@@ -109,15 +109,16 @@ def main():
                     done[r["url"]] = r
                 except Exception:
                     pass
-    queued = []
+    queued = []          # full queue records (url, source, case_name, ...)
     queued_set = set()
     if os.path.exists(QUEUE_F):
         with open(QUEUE_F) as f:
             for line in f:
                 try:
-                    u = json.loads(line)["url"]
+                    rec = json.loads(line)
+                    u = rec["url"]
                     if u not in queued_set:
-                        queued.append(u)
+                        queued.append(rec)
                         queued_set.add(u)
                 except Exception:
                     pass
@@ -137,8 +138,8 @@ def main():
 
     def flush_queue():
         with open(QUEUE_F, "w") as f:
-            for u in queued:
-                f.write(json.dumps({"url": u}) + "\n")
+            for rec in queued:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
     def record_doc(url, kind, body, content_type, path, case_slug, court,
                    discovered_via):
@@ -155,7 +156,7 @@ def main():
 
     def enqueue(u):
         if u not in queued_set and not terminal(u):
-            queued.append(u)
+            queued.append({"url": u})
             queued_set.add(u)
 
     ok = failed = added_docs = 0
@@ -178,8 +179,10 @@ def main():
 
     # ---- phase 2: queue drain (case pages -> PDFs) -------------------
     os.makedirs(PAGES, exist_ok=True)
-    batch = [u for u in queued if not terminal(u)][:args.limit]
-    for url in batch:
+    batch = [r for r in queued if not terminal(r["url"])][:args.limit]
+    for rec in batch:
+        url = rec["url"]
+        source = rec.get("source", "")
         if time.time() > deadline:
             break
         polite_sleep(url)
@@ -199,13 +202,23 @@ def main():
                 fname = urllib.parse.unquote(url.rstrip("/").split("/")[-1])
                 court = COURT_BY_HOST.get(urllib.parse.urlparse(url).netloc, "")
                 year = year_of(fname, url)
-                rel = os.path.join("pdfs", court or "misc", year, fname)
+                # media releases are a different doc type (communications,
+                # not judgments) — own lane, own storage, own record kind
+                is_media = (source == "media_release"
+                            or "-media-release" in fname.lower()
+                            or "/7-publications/announcements/" in url.lower())
+                if is_media:
+                    kind, rel = "media_release", os.path.join(
+                        "pdfs", "media-releases", year, fname)
+                else:
+                    kind = "judgment_pdf"
+                    rel = os.path.join("pdfs", court or "misc", year, fname)
                 os.makedirs(os.path.dirname(os.path.join(BASE, "data", rel)),
                             exist_ok=True)
                 with open(os.path.join(BASE, "data", rel), "wb") as f:
                     f.write(pb)
-                record_doc(url, "judgment_pdf", pb, pct, rel,
-                           "", court, "cdx_index")
+                record_doc(url, kind, pb, pct, rel,
+                           "", court, source or "cdx_index")
                 record_done(url, "ok", sha256=hashlib.sha256(pb).hexdigest())
                 added_docs += 1
             except Exception as e:
@@ -254,12 +267,18 @@ def main():
                     fname = purl.rstrip("/").split("/")[-1]
                     year_m = re.search(r"/cases/(\d{4})/", purl)
                     year = year_m.group(1) if year_m else "unknown"
-                    rel = os.path.join("pdfs", year, fname)
+                    if "-media-release" in fname.lower():
+                        kind = "media_release"
+                        rel = os.path.join("pdfs", "media-releases", year,
+                                           fname)
+                    else:
+                        kind = "judgment_pdf"
+                        rel = os.path.join("pdfs", year, fname)
                     os.makedirs(os.path.dirname(os.path.join(BASE, "data", rel)),
                                 exist_ok=True)
                     with open(os.path.join(BASE, "data", rel), "wb") as f:
                         f.write(pb)
-                    record_doc(purl, "judgment_pdf", pb, pct, rel,
+                    record_doc(purl, kind, pb, pct, rel,
                                slug, "", "case_page")
                     record_done(purl, "ok", sha256=hashlib.sha256(pb).hexdigest())
                     added_docs += 1
