@@ -20,6 +20,9 @@ import urllib.request
 BASE = "/opt/data/court-scraper"
 QUEUE_F = os.path.join(BASE, "queue.jsonl")
 DONE_F = os.path.join(BASE, "done.jsonl")
+# Prefixes fully fetched (success, even 0 rows). Failed buckets are retried
+# on the next run — Wayback CDX drops queries with 503/504 regularly.
+DONE_PREFIX_F = os.path.join(BASE, "cdx_prefixes_done.json")
 CDX = "https://web.archive.org/cdx/search/cdx"
 UA = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
 # CDX caps results at 50K per query and its page param is unreliable
@@ -46,6 +49,14 @@ def cdx_page(prefix, limit=50000, timeout=120):
 def main():
     limit_n = int(sys.argv[1]) if len(sys.argv) > 1 else len(PREFIXES)
 
+    done_prefixes = set()
+    if os.path.exists(DONE_PREFIX_F):
+        try:
+            with open(DONE_PREFIX_F) as f:
+                done_prefixes = set(json.load(f))
+        except Exception:
+            done_prefixes = set()
+
     done_urls = set()
     if os.path.exists(DONE_F):
         with open(DONE_F) as f:
@@ -65,7 +76,11 @@ def main():
 
     added = 0
     fetched = 0
-    for prefix in PREFIXES[:limit_n]:
+    pending = [p for p in PREFIXES[:limit_n] if p not in done_prefixes]
+    if not pending:
+        print("all prefixes already fetched — nothing to do")
+        return
+    for prefix in pending:
         try:
             urls = cdx_page(prefix)
         except Exception as e:
@@ -82,6 +97,9 @@ def main():
                     f.write(json.dumps({"url": u}) + "\n")
             queued.update(new)
             added += len(new)
+        done_prefixes.add(prefix)
+        with open(DONE_PREFIX_F, "w") as f:
+            json.dump(sorted(done_prefixes), f)
         print(f"prefix '{prefix}': {len(urls)} rows, {len(new)} new")
         if len(urls) >= 50000:
             print(f"WARNING: prefix '{prefix}' hit the 50K cap — "
