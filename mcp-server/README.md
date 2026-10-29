@@ -60,6 +60,27 @@ resumable cursor — and `corpora()` says when fresh records have landed.
    (`not_on_courtsofnz` = verified absent — the JDO back-catalogue
    evidence). Methodology and caveats travel with the numbers.
 
+7. **download(record_id, corpus?, format=raw|text)** — the file itself.
+   Returns a meta block (delivered sha256 + size + content type, the capture
+   provenance, the record's `seq`) followed by the captured bytes as an
+   embedded resource: `format="raw"` serves the bytes exactly as fetched
+   (sha256 checked against the capture record); `format="text"` serves
+   verbatim `pdftotext -layout` output for PDFs (computed on read, nothing
+   stored — same verbatim rule as Hansard). Metered per call.
+
+## Resources
+
+The same files are readable as MCP resources (files DO leave the box):
+
+- `qnz://readme` — file-delivery conventions (start here)
+- `qnz-pdf://<corpus>/<seq>` — captured PDF bytes exactly as fetched
+- `qnz-html://<corpus>/<seq>` — captured HTML bytes exactly as fetched
+- `qnz-text://<corpus>/<seq>` — verbatim text view (pdftotext -layout)
+
+`<seq>` is the record's stable `seq` from `records`/`get`. Scheme must match
+the record's content type (mismatches error loudly). Corpora that carry
+stored bytes advertise it as `has_files` in `corpora()`.
+
 ## Record shape
 
 Records carry the database's own fields (url/title, dates, ministers,
@@ -101,7 +122,7 @@ One full pass, then incremental forever. Fresh arrivals show up as
 
 - `corpora.yaml` — which corpora are mounted, where their files live, date/id
   field mapping (edit to mount a new corpus; no code changes)
-- `server.py` — the seven tools (mcp SDK v2, MCPServer, streamable-http)
+- `server.py` — the eight tools (mcp SDK v2, MCPServer, streamable-http)
 - `README.md` — this
 - runtime state (never committed): `metering.jsonl`, `minted_corpora.jsonl`,
   `server.log`, `.venv/`

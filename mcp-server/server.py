@@ -21,11 +21,13 @@ Metering: every tool call is appended to metering.jsonl (per-call).
 """
 
 import bisect
+import base64
 import hashlib
 import json
 import math
 import os
 import re
+import subprocess
 import threading
 import time
 import urllib.parse
@@ -33,6 +35,9 @@ from datetime import datetime, timedelta, timezone
 
 import yaml
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ResourceError, ResourceNotFoundError
+from mcp.types import (BlobResourceContents, EmbeddedResource, TextContent,
+                       TextResourceContents)
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 CONFIG = os.path.join(BASE, "corpora.yaml")
@@ -434,7 +439,8 @@ def corpora() -> dict:
         c = _fresh(name)
         item = {"name": name,
                 "label": c.cfg.get("label"),
-                "source_category": c.cfg.get("source_category")}
+                "source_category": c.cfg.get("source_category"),
+                "has_files": bool(c.cfg.get("path_root"))}
         item.update(c.freshness())
         out.append(item)
     meter("corpora", {}, len(out), (time.time() - t0) * 1000)
@@ -894,6 +900,193 @@ def gaps(series: str | None = None, sample: int = 15) -> dict:
                 "Content capture is from official sources only; NZLII "
                 "supplies comparison IDs.",
     }
+
+
+# ---------------------------------------------------------------------------
+# File delivery: the captured bytes leave the box. A metered `download` tool
+# plus MCP resources (qnz-pdf://, qnz-html://, qnz-text://<corpus>/<seq>).
+# Raw bytes are served exactly as fetched (sha256 checked against the capture
+# record); the text view is verbatim pdftotext -layout, computed on read —
+# nothing is stored, converted, or fixed.
+# ---------------------------------------------------------------------------
+
+POPPLER_BIN = "/opt/data/tools/poppler/usr/bin"
+POPPLER_LIB = "/opt/data/tools/poppler/usr/lib/x86_64-linux-gnu"
+
+
+def _find_record(record_id: str, corpus: str | None):
+    names = [corpus] if corpus else list(CORPORA)
+    for name in names:
+        if name not in CORPORA:
+            raise ValueError(f"unknown corpus: {name}")
+        rec = _fresh(name)._by_id.get(record_id)
+        if rec is not None:
+            return name, rec
+    return None, None
+
+
+def _rec_at(corpus: str, seq: str):
+    if corpus not in CORPORA:
+        raise ResourceNotFoundError(f"unknown corpus: {corpus}")
+    c = _fresh(corpus)
+    try:
+        i = int(seq)
+    except ValueError:
+        raise ResourceNotFoundError(f"bad seq: {seq}")
+    if not 0 <= i < len(c.records):
+        raise ResourceNotFoundError(f"no seq {seq} in corpus {corpus}")
+    return c.records[i]
+
+
+def _stored_file(rec: dict) -> str:
+    f = rec.get("file")
+    if not f:
+        raise ValueError("no stored bytes for this record "
+                         "(its corpus declares no path_root)")
+    if not os.path.exists(f):
+        raise ValueError(f"stored file missing on host: {f}")
+    return f
+
+
+def _ctype(rec: dict) -> str:
+    return (str(rec["fields"].get("content_type") or "").split(";")[0].strip()
+            or "application/octet-stream")
+
+
+def _pdf_text(path: str) -> str:
+    env = dict(os.environ, LD_LIBRARY_PATH=POPPLER_LIB)
+    return subprocess.run(
+        [os.path.join(POPPLER_BIN, "pdftotext"), "-layout", path, "-"],
+        capture_output=True, check=True, env=env,
+        timeout=300).stdout.decode("utf-8", errors="replace")
+
+
+def _text_view(rec: dict) -> tuple:
+    f = _stored_file(rec)
+    if f.lower().endswith(".pdf") or _ctype(rec) == "application/pdf":
+        return _pdf_text(f), ("verbatim pdftotext -layout, computed on read; "
+                              "nothing stored")
+    return open(f, "rb").read().decode("utf-8", errors="replace"), \
+        "verbatim file bytes decoded UTF-8; nothing stored"
+
+
+@mcp.tool()
+def download(record_id: str, corpus: str | None = None,
+             format: str = "raw") -> list:
+    """Fetch a record's captured file — the bytes `records`/`get` point at.
+
+    `record_id` is the record's `id` (its source URL). Returns two blocks:
+    a meta block (delivered sha256 + size + content type, the capture
+    provenance, the record's `seq` and resource URI), then the file itself
+    as an embedded resource — base64 blob for `format="raw"` (the bytes
+    exactly as fetched, sha256 checked against the capture record), text for
+    `format="text"` (verbatim pdftotext -layout for PDFs; computed on read,
+    nothing stored). The same file is readable as a resource:
+    qnz-pdf://<corpus>/<seq>, qnz-html://<corpus>/<seq> (raw),
+    qnz-text://<corpus>/<seq> (text). Metered per call."""
+    t0 = time.time()
+    fmt = (format or "raw").lower()
+    if fmt not in ("raw", "text"):
+        raise ValueError("format must be 'raw' or 'text'")
+    name, rec = _find_record(record_id, corpus)
+    if rec is None:
+        meter("download", {"record_id": record_id, "format": fmt}, 0,
+              (time.time() - t0) * 1000)
+        return [TextContent(type="text", text=json.dumps(
+            {"error": "not found", "record_id": record_id}))]
+    ctype = _ctype(rec)
+    captured = str(rec["fields"].get("sha256")
+                   or rec.get("capture", {}).get("sha256") or "")
+    if fmt == "text":
+        payload, note = _text_view(rec)
+        uri = f"qnz-text://{name}/{rec['seq']}"
+        body = TextResourceContents(uri=uri, mimeType="text/plain",
+                                    text=payload)
+        delivered_sha = hashlib.sha256(payload.encode()).hexdigest()
+        matches = None      # captured sha256 covers the raw bytes, not text
+    else:
+        f = _stored_file(rec)
+        payload = open(f, "rb").read()
+        note = "bytes exactly as captured; nothing transformed"
+        scheme = ("pdf" if ctype == "application/pdf"
+                  else "html" if ctype.startswith("text/html") else "download")
+        uri = f"qnz-{scheme}://{name}/{rec['seq']}"
+        body = BlobResourceContents(uri=uri, mimeType=ctype,
+                                    blob=base64.b64encode(payload).decode())
+        delivered_sha = hashlib.sha256(payload).hexdigest()
+        matches = (captured == delivered_sha) if captured else None
+    meta = {
+        "corpus": name, "seq": rec["seq"], "record_id": rec["id"],
+        "title": rec.get("title"), "kind": rec["fields"].get("kind"),
+        "format": fmt, "content_type": ctype,
+        "delivered_bytes": len(payload), "delivered_sha256": delivered_sha,
+        "captured_sha256": captured or None, "sha256_matches_capture": matches,
+        "resource_uri": uri, "capture": rec.get("capture"),
+        "file": rec.get("file"),
+        "note": note,
+    }
+    meter("download", {"record_id": record_id, "format": fmt}, 1,
+          (time.time() - t0) * 1000)
+    return [TextContent(type="text", text=json.dumps(meta, default=str)),
+            EmbeddedResource(type="resource", resource=body)]
+
+
+def _raw_resource(corpus: str, seq: str, need: str, family: str) -> bytes:
+    rec = _rec_at(corpus, seq)
+    f = _stored_file(rec)
+    ctype = _ctype(rec)
+    ok = (ctype == "application/pdf" if family == "pdf"
+          else ctype.startswith("text/html"))
+    if not ok:
+        raise ResourceError(f"qnz-{family}://{corpus}/{seq} is {ctype}; "
+                            f"use the scheme matching its content type")
+    meter(f"resource:qnz-{family}", {"corpus": corpus, "seq": seq}, 1, 0)
+    return open(f, "rb").read()
+
+
+@mcp.resource("qnz-pdf://{corpus}/{seq}", mime_type="application/pdf",
+              name="captured-pdf",
+              description="Captured PDF bytes exactly as fetched (judgment or "
+                          "media release). seq = record position from `records`.")
+def res_pdf(corpus: str, seq: str) -> bytes:
+    return _raw_resource(corpus, seq, "application/pdf", "pdf")
+
+
+@mcp.resource("qnz-html://{corpus}/{seq}", mime_type="text/html",
+              name="captured-page",
+              description="Captured HTML page bytes exactly as fetched "
+                          "(e.g. courtsofnz case pages).")
+def res_html(corpus: str, seq: str) -> bytes:
+    return _raw_resource(corpus, seq, "text/html", "html")
+
+
+@mcp.resource("qnz-text://{corpus}/{seq}", mime_type="text/plain",
+              name="verbatim-text",
+              description="Verbatim text view of a capture: pdftotext -layout "
+                          "for PDFs, decoded bytes for text. Computed on read.")
+def res_text(corpus: str, seq: str) -> str:
+    rec = _rec_at(corpus, seq)
+    meter("resource:qnz-text", {"corpus": corpus, "seq": seq}, 1, 0)
+    return _text_view(rec)[0]
+
+
+@mcp.resource("qnz://readme", mime_type="text/plain", name="file-delivery")
+def res_readme() -> str:
+    return (
+        "Query NZ Ingest MCP — file delivery\n"
+        "\n"
+        "Records point at captured files via `file` (host path) and `url`\n"
+        "(source). To actually receive the bytes:\n"
+        "  1. download(record_id, corpus?, format=raw|text) — metered tool;\n"
+        "     returns meta (sha256, capture provenance) + the file as an\n"
+        "     embedded resource (base64 blob raw / text verbatim).\n"
+        "  2. resources/read:\n"
+        "       qnz-pdf://<corpus>/<seq>   PDF bytes as fetched\n"
+        "       qnz-html://<corpus>/<seq>  HTML bytes as fetched\n"
+        "       qnz-text://<corpus>/<seq>  verbatim text (pdftotext -layout)\n"
+        "     <seq> is the record's stable `seq` from `records`/`get`.\n"
+        "Raw bytes are always exactly as captured (sha256-verifiable against\n"
+        "the capture block). Text is computed on read; nothing is stored.\n")
 
 
 @mcp.custom_route("/health", methods=["GET"])
