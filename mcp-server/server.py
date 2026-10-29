@@ -28,6 +28,7 @@ import os
 import re
 import threading
 import time
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 
 import yaml
@@ -211,10 +212,13 @@ class Corpus:
     def _row_to_rec(self, row: dict, text: str, arrived: str = "") -> dict:
         rid = str(row.get(self.cfg["id_field"]) or row.get("url")
                   or hashlib.sha256(json.dumps(row, sort_keys=True).encode()).hexdigest()[:16])
+        tf = self.cfg.get("title_field", "")
+        tfs = tf if isinstance(tf, list) else [tf]
+        title = next((str(row[k]) for k in tfs if k and row.get(k)), "")
         rec = {
             "id": rid,
             "date": norm_date(row.get(self.cfg["date_field"])),
-            "title": str(row.get(self.cfg.get("title_field", "")) or "")[:300],
+            "title": title[:300],
             "text": text,
             "fields": dict(row),
             "arrived": arrived or str(row.get("fetched_at")
@@ -432,7 +436,7 @@ def corpora() -> dict:
 
 @mcp.tool()
 def records(corpus: str, cursor: int = 0, limit: int = 50,
-            include_text: bool = True) -> dict:
+            include_text: bool = True, doc_type: str | None = None) -> dict:
     """READ (bulk ingestion). The corpus in stable arrival order, paginated.
     `cursor` is the number of records already ingested (0 = start); each
     response returns the next batch and `next_cursor`. When `next_cursor`
@@ -440,18 +444,28 @@ def records(corpus: str, cursor: int = 0, limit: int = 50,
     poll `corpora()` for fresh arrivals, then call again with the saved
     cursor to pull only what landed since. Record fields are the database's
     own; each carries capture provenance and, where fields are model-made,
-    an annotation block. Set include_text=false for a metadata-only pass."""
+    an annotation block. Set include_text=false for a metadata-only pass.
+    `doc_type` filters to one document type (e.g. judgment_pdf,
+    media_release) on corpora that declare a doc_type_field; the cursor
+    then counts positions within the filtered set."""
     t0 = time.time()
     if corpus not in CORPORA:
         return {"error": f"unknown corpus {corpus!r}", "available": list(CORPORA)}
     c = _fresh(corpus)
     cursor = max(0, int(cursor))
     lim = max(1, min(int(limit), 200))
-    batch = c.records[cursor:cursor + lim]
+    sel = c.records
+    if doc_type:
+        dtf = c.cfg.get("doc_type_field")
+        if not dtf:
+            return {"error": f"corpus {corpus!r} declares no doc_type_field",
+                    "corpus": corpus}
+        sel = [r for r in c.records if r["fields"].get(dtf) == doc_type]
+    batch = sel[cursor:cursor + lim]
     out = [_rec_out(r, include_text) for r in batch]
-    meter("records", {"corpus": corpus, "cursor": cursor}, len(out),
-          (time.time() - t0) * 1000)
-    return {"corpus": corpus, "total": len(c.records),
+    meter("records", {"corpus": corpus, "cursor": cursor, "doc_type": doc_type},
+          len(out), (time.time() - t0) * 1000)
+    return {"corpus": corpus, "total": len(sel), "doc_type": doc_type,
             "cursor": cursor, "next_cursor": cursor + len(out),
             "records": out}
 
@@ -483,11 +497,14 @@ def changes(corpus: str, since: str, cursor: int = 0, limit: int = 100,
 
 @mcp.tool()
 def search(query: str, corpus: str | None = None, date_from: str | None = None,
-           date_to: str | None = None, limit: int = 20, offset: int = 0) -> dict:
+           date_to: str | None = None, limit: int = 20, offset: int = 0,
+           doc_type: str | None = None) -> dict:
     """READ (find). Case-insensitive AND search over record text across one
     corpus or all. Empty query browses (use the date filters). Returns
     matching records with a text snippet — summaries of the data, not of
-    anything else."""
+    anything else. `doc_type` restricts to one document type (e.g.
+    judgment_pdf, media_release); corpora without a doc_type_field are
+    skipped when it is set."""
     t0 = time.time()
     terms = [t.lower() for t in query.split() if t.strip()]
     if corpus is not None and corpus not in CORPORA and not corpus.startswith("mint:"):
@@ -500,7 +517,10 @@ def search(query: str, corpus: str | None = None, date_from: str | None = None,
     names = [corpus] if corpus else list(CORPORA)
     for name in names:
         c = _fresh(name)
+        dtf = c.cfg.get("doc_type_field") if doc_type else None
         for rec in c.records:
+            if doc_type and (not dtf or rec["fields"].get(dtf) != doc_type):
+                continue
             d = rec["date"]
             if date_from and d and d < _parse_ymd(date_from):
                 continue
@@ -748,6 +768,124 @@ def _load_minted(name: str | None = None):
                             "included": len(r.get("included_ids", [])),
                             "excluded_total": r.get("excluded_total")})
     return out if name is None else None
+
+
+# -- gaps: completeness measurement (courts corpus vs the NZLII index) -----
+GAPS_CFG = CFG.get("gaps", {})
+GAP_CITE_RE = re.compile(r"(19|20)(\d{2})[-_]?(NZ[A-Za-z]{2,8})[-_](\d{1,4})(?!\d)")
+
+
+def _gap_key(series, year, num):
+    """Canonical (SERIES, year, num) triple — uppercased series, unpadded
+    num (NZLII's index carries '043' and '43' as duplicate URL variants)."""
+    return (series.upper(), int(year), str(int(num)))
+
+
+def _gap_ids_from_files(files):
+    ids = set()
+    for path in files:
+        if not path or not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                for field in ("url", "path", "case_name", "case_slug"):
+                    s = urllib.parse.unquote(str(row.get(field) or ""))
+                    for m in GAP_CITE_RE.finditer(s):
+                        ids.add(_gap_key(m.group(3), m.group(1) + m.group(2),
+                                         m.group(4)))
+    return ids
+
+
+@mcp.tool()
+def gaps(series: str | None = None, sample: int = 15) -> dict:
+    """MEASUREMENT (completeness, courts corpus). Per-series gap analysis
+    against the NZLII comparison index — NZLII is used as a COMPARISON
+    source only (case IDs as metadata, never content). For each series:
+    ids in the comparison index, ids in our own corpus index (filenames/
+    URLs/case names), the difference, and how much of the difference has
+    been PROBED against the official source (not_on_courtsofnz = verified
+    absent from the open official site — the JDO back-catalogue evidence).
+    Pass `series` (e.g. 'NZHC') for one series. Numbers are measurements
+    with their methodology and caveats attached, not conclusions."""
+    t0 = time.time()
+    nzlii = set()
+    nz_path = GAPS_CFG.get("nzlii_ids_file")
+    if nz_path and os.path.exists(nz_path):
+        with open(nz_path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    r = json.loads(line)
+                    nzlii.add(_gap_key(r["series"], r["year"], r["num"]))
+                except (ValueError, KeyError):
+                    continue
+    else:
+        return {"error": "comparison index not available",
+                "nzlii_ids_file": nz_path}
+    ours = _gap_ids_from_files(GAPS_CFG.get("corpus_index_files", []))
+
+    not_on = set()          # (series, year, num) probed & absent officially
+    probe_rows = 0
+    pp = GAPS_CFG.get("probe_results_file")
+    if pp and os.path.exists(pp):
+        with open(pp, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    r = json.loads(line)
+                    not_on.add(_gap_key(r["series"], r["year"], r["num"]))
+                    probe_rows += 1
+                except (ValueError, KeyError):
+                    continue
+
+    series_sel = {series.upper()} if series else None
+    per_series = {}
+    for s in sorted({k[0] for k in nzlii | ours}):
+        if series_sel and s not in series_sel:
+            continue
+        nz = {k for k in nzlii if k[0] == s}
+        our = {k for k in ours if k[0] == s}
+        missing = nz - our
+        miss_no = missing & not_on
+        per_series[s] = {
+            "comparison_index_ids": len(nz),
+            "corpus_index_ids": len(our),
+            "missing_from_corpus": len(missing),
+            "not_on_courtsofnz": len(miss_no),
+            "missing_unprobed": len(missing - not_on),
+            "ours_only": len(our - nz),
+            "missing_sample": [f"[{y}] {s} {n}" for s_, y, n in
+                               sorted(missing, key=lambda k: (-k[1], int(k[2])))
+                              ][:sample],
+        }
+    meter("gaps", {"series": series}, len(per_series),
+          (time.time() - t0) * 1000)
+    return {
+        "comparison_source": GAPS_CFG.get("comparison_source"),
+        "series": per_series,
+        "methodology": {
+            "id_mapping": "NZLII URL number == neutral citation "
+                          "(verified vs Wayback replay case titles)",
+            "corpus_ids_from": "our own filenames/URLs/case names "
+                               "(regex-derived, no content used)",
+            "not_on_courtsofnz": f"{probe_rows} probe results — cases probed "
+                                 "live against the official source (HEAD) "
+                                 "and absent; JDO back-catalogue evidence",
+        },
+        "caveats": [
+            "comparison index is Wayback-CDX-derived: both sides carry "
+            "Wayback coverage gaps (sparse for very recent cases)",
+            "NZLII allocates its own numbers for unreported decisions "
+            "(5-digit NZDC-style IDs are not neutral citations)",
+            "series whose official filenames carry no citation (coroners, "
+            "parts of NZEnvC) match at count level only",
+        ],
+        "note": "Measurements with their gaps, not conclusions. "
+                "Content capture is from official sources only; NZLII "
+                "supplies comparison IDs.",
+    }
 
 
 @mcp.custom_route("/health", methods=["GET"])

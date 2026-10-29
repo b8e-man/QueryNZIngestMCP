@@ -134,3 +134,30 @@ corpora:
     title_field: title
     record_file: /opt/data/parliament-scraper/data/api_queue/sc-submissions.jsonl
     freshness_sla_hours: 24
+
+  courts:
+    label: "NZ courts — judgments + media releases (JDO upstream, courtsofnz, tribunals)"
+    source_category: judicial-decision
+    kind: records
+    id_field: url
+    date_field: fetched_at
+    # first non-empty wins
+    title_field: [case_name, case_slug, url]
+    doc_type_field: kind          # judgment_pdf | media_release | case_page
+    record_file: /opt/data/court-scraper/records.jsonl
+    freshness_sla_hours: 24
+
+# The `gaps` tool: completeness measurement against the NZLII comparison
+# index. NZLII is a COMPARISON source only (metadata IDs, never content):
+# the Wayback CDX index of nzlii.org case URLs, where the URL number IS the
+# neutral citation (verified against Wayback replay titles 2026-10-29).
+# Methodology + caveats are surfaced in the tool output, not hidden here.
+gaps:
+  comparison_source: "NZLII case IDs via Wayback CDX index (metadata only)"
+  nzlii_ids_file: /opt/data/court-scraper/nzlii_ids.jsonl
+  corpus_index_files:
+    - /opt/data/court-scraper/records.jsonl
+    - /opt/data/court-scraper/queue.jsonl
+    - /opt/data/court-scraper/done.jsonl
+    - /opt/data/court-scraper/corpus_asset_ids.jsonl
+  probe_results_file: /opt/data/court-scraper/gap_probe_results.jsonl

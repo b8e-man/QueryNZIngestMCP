@@ -142,7 +142,7 @@ def main():
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
     def record_doc(url, kind, body, content_type, path, case_slug, court,
-                   discovered_via):
+                   discovered_via, case_name=""):
         sha = hashlib.sha256(body).hexdigest()
         with open(RECORDS_F, "a") as f:
             f.write(json.dumps({
@@ -150,6 +150,7 @@ def main():
                 "http_status": 200, "sha256": sha, "path": path,
                 "bytes": len(body), "content_type": content_type,
                 "case_slug": case_slug, "court": court,
+                "case_name": case_name,
                 "discovered_via": discovered_via,
             }, ensure_ascii=False) + "\n")
         return sha
@@ -203,9 +204,12 @@ def main():
                 court = COURT_BY_HOST.get(urllib.parse.urlparse(url).netloc, "")
                 year = year_of(fname, url)
                 # media releases are a different doc type (communications,
-                # not judgments) — own lane, own storage, own record kind
+                # not judgments) — own lane, own storage, own record kind.
+                # courtsofnz names twins both 'MR-<cite>.pdf' and
+                # '<cite>-media-release.pdf' (2026-10-29).
                 is_media = (source == "media_release"
                             or "-media-release" in fname.lower()
+                            or fname.lower().startswith("mr-")
                             or "/7-publications/announcements/" in url.lower())
                 if is_media:
                     kind, rel = "media_release", os.path.join(
@@ -218,7 +222,8 @@ def main():
                 with open(os.path.join(BASE, "data", rel), "wb") as f:
                     f.write(pb)
                 record_doc(url, kind, pb, pct, rel,
-                           "", court, source or "cdx_index")
+                           "", court, source or "cdx_index",
+                           case_name=rec.get("case_name", ""))
                 record_done(url, "ok", sha256=hashlib.sha256(pb).hexdigest())
                 added_docs += 1
             except Exception as e:
@@ -267,7 +272,8 @@ def main():
                     fname = purl.rstrip("/").split("/")[-1]
                     year_m = re.search(r"/cases/(\d{4})/", purl)
                     year = year_m.group(1) if year_m else "unknown"
-                    if "-media-release" in fname.lower():
+                    if ("-media-release" in fname.lower()
+                            or fname.lower().startswith("mr-")):
                         kind = "media_release"
                         rel = os.path.join("pdfs", "media-releases", year,
                                            fname)

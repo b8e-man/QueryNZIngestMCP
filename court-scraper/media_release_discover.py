@@ -36,7 +36,12 @@ UA = ("Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 "
       "Firefox/128.0 (Query NZ corpus capture; contact arthur@betelgeuse.co.nz)")
 PDF_RE = re.compile(r'href="([^"]+\.pdf)"', re.I)
 CITE_RE = re.compile(r"\[(\d{4})\] (NZ[A-Za-z]{2,8}) (\d{1,4})")
-TWIN = SITE + "/assets/cases/{y}/{y}-{s}-{n}-media-release.pdf"
+# courtsofnz names twins BOTH ways (2026-10-29): MR-<cite>.pdf and
+# <cite>-media-release.pdf — probe both patterns.
+TWIN_PATTERNS = (
+    SITE + "/assets/cases/{y}/MR-{y}-{s}-{n}.pdf",
+    SITE + "/assets/cases/{y}/{y}-{s}-{n}-media-release.pdf",
+)
 
 CDX_QUERIES = (
     ("announcements", "courtsofnz.govt.nz/assets/7-Publications/Announcements/"),
@@ -127,14 +132,17 @@ def channel_twins(known, max_probes=25):
     for y, s, n in sorted(cites, reverse=True):
         if probes >= max_probes:
             break
-        url = TWIN.format(y=y, s=s, n=n)
-        if url in known:
-            continue
-        probes += 1
-        st, _ = fetch(url, timeout=20)
-        if st == 200:
-            added += enqueue([url], known)
-        time.sleep(1.5)
+        for pattern in TWIN_PATTERNS:
+            if probes >= max_probes:
+                break
+            url = pattern.format(y=y, s=s, n=n)
+            if url in known:
+                continue
+            probes += 1
+            st, _ = fetch(url, timeout=20)
+            if st == 200:
+                added += enqueue([url], known)
+            time.sleep(1.5)
     print(f"twins: {probes} probed, {added} found", flush=True)
     return added
 
