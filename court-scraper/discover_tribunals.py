@@ -33,6 +33,9 @@ PREFIXES = (
     "justice.govt.nz/assets/Documents/Decisions/",
     "employmentcourt.govt.nz/assets/Documents/Decisions/",
     "coronerscourt.govt.nz/assets/",
+    "coronerscourt.govt.nz/",      # host-wide widen (2026-10-29): /assets/ alone
+                                   # was thin — Wayback respects the /assets/
+                                   # robots exclusion and archived little there
     "environmentcourt.govt.nz/",
 )
 MAX_TRIES = 3

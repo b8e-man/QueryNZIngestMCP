@@ -137,8 +137,27 @@ def main():
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
     def flush_queue():
+        # merge with rows appended by the discoverers while we ran (they write
+        # to QUEUE_F concurrently); rows known to this tick win on conflict
+        known = {r["url"] for r in queued}
+        merged = list(queued)
+        try:
+            with open(QUEUE_F) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        r = json.loads(line)
+                    except ValueError:
+                        continue
+                    if r.get("url") and r["url"] not in known:
+                        known.add(r["url"])
+                        merged.append(r)
+        except FileNotFoundError:
+            pass
         with open(QUEUE_F, "w") as f:
-            for rec in queued:
+            for rec in merged:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
     def record_doc(url, kind, body, content_type, path, case_slug, court,
@@ -201,7 +220,8 @@ def main():
                     record_done(url, f"http_{st}")
                     continue
                 fname = urllib.parse.unquote(url.rstrip("/").split("/")[-1])
-                court = COURT_BY_HOST.get(urllib.parse.urlparse(url).netloc, "")
+                court = (rec.get("court")
+                         or COURT_BY_HOST.get(urllib.parse.urlparse(url).netloc, ""))
                 year = year_of(fname, url)
                 # media releases are a different doc type (communications,
                 # not judgments) — own lane, own storage, own record kind.
@@ -217,6 +237,12 @@ def main():
                 else:
                     kind = "judgment_pdf"
                     rel = os.path.join("pdfs", court or "misc", year, fname)
+                # explicit doc-type hint from the discovering lane wins
+                # (e.g. Waitangi Tribunal reports are not judgments)
+                if rec.get("kind"):
+                    kind = rec["kind"]
+                    if kind == "report":
+                        rel = os.path.join("pdfs", "reports", year, fname)
                 os.makedirs(os.path.dirname(os.path.join(BASE, "data", rel)),
                             exist_ok=True)
                 with open(os.path.join(BASE, "data", rel), "wb") as f:
@@ -249,7 +275,7 @@ def main():
             with open(os.path.join(BASE, "data", page_path), "w",
                       encoding="utf-8") as f:
                 f.write(body.decode("utf-8", errors="replace"))
-            record_doc(url, "case_page", body, ctype, page_path,
+            record_doc(url, rec.get("kind") or "case_page", body, ctype, page_path,
                        slug, "", "rss/queue")
             ok += 1
 
