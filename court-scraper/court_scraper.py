@@ -46,6 +46,17 @@ UA = ("Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 "
 PDF_RE = re.compile(r'href="([^"]+\.pdf[^"]*)"')
 SLUG_RE = re.compile(r"/cases/([^/?#]+)")
 
+
+def safe_name(name, url):
+    """ext4 NAME_MAX = 255 bytes; long case-name slugs broke file writes with
+    Errno 36 (2026-10-30). Sanitize, then clamp to 100 chars + a URL hash so
+    names stay unique and classification prefixes (mr-) survive the cut."""
+    name = re.sub(r'[\\/:*?"<>|]', "_", name) or "doc"
+    if len(name.encode("utf-8", "replace")) > 100:
+        h = hashlib.sha1(url.encode("utf-8")).hexdigest()[:8]
+        name = name[:88].rstrip(". ") + "-" + h
+    return name
+
 TERMINAL = ("ok", "http_404", "http_410")
 SLEEP = 1.0        # politeness between requests (govt site, ~1 req/s max)
 # justice.govt.nz /robots.txt disallows /assets/ — user directed direct fetch
@@ -219,17 +230,18 @@ def main():
                     fails.append(f"{url}: http_{st}")
                     record_done(url, f"http_{st}")
                     continue
-                fname = urllib.parse.unquote(url.rstrip("/").split("/")[-1])
+                raw_fname = urllib.parse.unquote(url.rstrip("/").split("/")[-1])
+                fname = safe_name(raw_fname, url)
                 court = (rec.get("court")
                          or COURT_BY_HOST.get(urllib.parse.urlparse(url).netloc, ""))
-                year = year_of(fname, url)
+                year = year_of(raw_fname, url)
                 # media releases are a different doc type (communications,
                 # not judgments) — own lane, own storage, own record kind.
                 # courtsofnz names twins both 'MR-<cite>.pdf' and
                 # '<cite>-media-release.pdf' (2026-10-29).
                 is_media = (source == "media_release"
-                            or "-media-release" in fname.lower()
-                            or fname.lower().startswith("mr-")
+                            or "-media-release" in raw_fname.lower()
+                            or raw_fname.lower().startswith("mr-")
                             or "/7-publications/announcements/" in url.lower())
                 if is_media:
                     kind, rel = "media_release", os.path.join(
@@ -259,7 +271,8 @@ def main():
             continue
 
         slug_m = SLUG_RE.search(url)
-        slug = slug_m.group(1) if slug_m else url.rstrip("/").split("/")[-1]
+        slug = safe_name(
+            slug_m.group(1) if slug_m else url.rstrip("/").split("/")[-1], url)
         try:
             status, body, ctype = fetch(url)
             if status in (404, 410):
@@ -295,11 +308,12 @@ def main():
                     if st != 200:
                         record_done(purl, f"http_{st}")
                         continue
-                    fname = purl.rstrip("/").split("/")[-1]
+                    raw_fname = purl.rstrip("/").split("/")[-1]
+                    fname = safe_name(raw_fname, purl)
                     year_m = re.search(r"/cases/(\d{4})/", purl)
                     year = year_m.group(1) if year_m else "unknown"
-                    if ("-media-release" in fname.lower()
-                            or fname.lower().startswith("mr-")):
+                    if ("-media-release" in raw_fname.lower()
+                            or raw_fname.lower().startswith("mr-")):
                         kind = "media_release"
                         rel = os.path.join("pdfs", "media-releases", year,
                                            fname)
