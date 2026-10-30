@@ -289,7 +289,8 @@ def main():
                       encoding="utf-8") as f:
                 f.write(body.decode("utf-8", errors="replace"))
             record_doc(url, rec.get("kind") or "case_page", body, ctype, page_path,
-                       slug, "", "rss/queue")
+                       slug, rec.get("court", ""), rec.get("source") or "queue",
+                       case_name=rec.get("case_name", ""))
             ok += 1
 
             # PDFs on the case page
