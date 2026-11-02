@@ -148,6 +148,19 @@ corpora:
     path_root: /opt/data/court-scraper/data   # resolves relative `path` -> absolute `file`
     freshness_sla_hours: 24
 
+  gets:
+    label: "NZ govt tenders — GETS notices + awards (MBIE procurement)"
+    source_category: procurement-notice
+    kind: records
+    id_field: url
+    date_field: fetched_at
+    # first non-empty wins
+    title_field: [case_name, case_slug, url]
+    doc_type_field: kind          # tender_notice (tender_type: RFT/ROI/NOI...)
+    record_file: /opt/data/gets-scraper/records.jsonl
+    path_root: /opt/data/gets-scraper/data   # resolves relative `path` -> absolute `file`
+    freshness_sla_hours: 24
+
 # The `gaps` tool: completeness measurement against the NZLII comparison
 # index. NZLII is a COMPARISON source only (metadata IDs, never content):
 # the Wayback CDX index of nzlii.org case URLs, where the URL number IS the
