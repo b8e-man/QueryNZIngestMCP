@@ -132,12 +132,22 @@ def main():
 
     for name, tmpl in LISTS.items():
         empty_streak = 0
+        prev_ids = set()
         for p in range(1, args.max_pages + 1):
             if time.time() > deadline:
                 break
             key = f"{name}:{p}"
             if key in done_pages and name != "open":
-                continue  # open list re-walked every run (freshness)
+                # re-walk pages after 6 days so in-place list changes on
+                # already-walked pages are eventually seen
+                from datetime import datetime, timezone
+                try:
+                    walked_at = datetime.fromisoformat(done_pages[key])
+                    age_h = (datetime.now(timezone.utc) - walked_at).total_seconds() / 3600
+                    if age_h < 144:
+                        continue
+                except (TypeError, ValueError):
+                    pass
             try:
                 st, body = fetch(tmpl.format(p=p))
                 if st != 200:
@@ -145,6 +155,14 @@ def main():
                     break
                 html = body.decode("utf-8", errors="replace")
                 rows = parse_rows(html)
+                page_ids = set(rows)
+                if not rows or (page_ids == prev_ids and prev_ids):
+                    empty_streak += 1
+                    if empty_streak >= 2:
+                        break  # list end, or page=N clamps to a repeat
+                else:
+                    empty_streak = 0
+                prev_ids = page_ids
                 new = 0
                 for rfx, meta in rows.items():
                     if rfx in known:
@@ -163,16 +181,10 @@ def main():
                     new += 1
                 added_total += new
                 walked += 1
-                done_pages[key] = True
+                from datetime import datetime, timezone
+                done_pages[key] = datetime.now(timezone.utc).isoformat(timespec="seconds")
                 time.sleep(SLEEP)
-                if not rows:
-                    empty_streak += 1
-                    if empty_streak >= 2:
-                        break  # past the end of this list
-                else:
-                    empty_streak = 0
-                if new == 0 and p > 1 and name == "open":
-                    pass  # open list small; always walk to the end
+
             except Exception as e:
                 fails.append(f"{name} p{p}: {str(e)[:80]}")
                 empty_streak += 1

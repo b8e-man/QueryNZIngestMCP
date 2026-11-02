@@ -5,8 +5,12 @@ cd /opt/data/gets-scraper || { echo "gets-discover: cannot cd"; exit 1; }
 OUT=$(python3 gets_discover.py --time-budget 90 2>&1)
 RC=$?
 OUT2=$(python3 gets_cdx_discover.py --time-budget 60 2>&1)
+OUT3=$(python3 gets_history_enum.py --time-budget 60 2>&1)
+OUT4=$(python3 mbie_bulk_fetch.py --time-budget 60 2>&1)
 BOTH="$OUT
-$OUT2"
+$OUT2
+$OUT3
+$OUT4"
 ADDED=$(echo "$BOTH" | grep -oP 'added=\K[0-9]+' | awk '{s+=$1} END {print s}')
 FAILED=$(echo "$BOTH" | grep -c "fails=[1-9]\|failed (")
 if [ $RC -ne 0 ]; then
