@@ -114,14 +114,42 @@ def main():
             if u in done:
                 continue
             try:
-                r = ctx.request.get(u, timeout=60000)
-                if r.status != 200:
-                    fails.append(f"{u}: http_{r.status}")
+                u_src = "mbie_open_data"
+                # real browser navigation: Incapsula 403s ctx.request even
+                # with challenge cookies (fingerprint mismatch) — measured
+                # 2026-11-02. page.goto carries the full TLS/JS fingerprint.
+                body = b""
+                status = 0
+                for attempt in (0, 1):
+                    resp = page.goto(u, timeout=60000,
+                                     wait_until="domcontentloaded")
+                    time.sleep(4 if attempt == 0 else 8)
+                    status = resp.status if resp else 0
+                    body = resp.body() if resp else b""
+                    if status == 200 and len(body) >= 5000 \
+                            and b"Incapsula" not in body[:2000]:
+                        break
+                if status != 200 or len(body) < 5000 or b"Incapsula" in body[:2000]:
+                    # Wayback fallback: static assets are often archived as
+                    # real bytes even when the live host WAFs them (IA flaps,
+                    # so this also self-heals on the daily cron retry).
+                    try:
+                        import urllib.request
+                        wb = ("https://web.archive.org/web/2id_/" + u)
+                        req = urllib.request.Request(
+                            wb, headers={"User-Agent": UA})
+                        with urllib.request.urlopen(req, timeout=45) as r2:
+                            body2 = r2.read()
+                        if len(body2) >= 5000 and b"Incapsula" not in body2[:2000]:
+                            body, status, u_src = body2, 200, "mbie_open_data+wayback"
+                    except Exception:
+                        pass
+                if status != 200:
+                    fails.append(f"{u}: http_{status}")
                     with open(DONE_F, "a") as f:
                         f.write(json.dumps({"url": u,
-                                            "status": f"http_{r.status}"}) + "\n")
+                                            "status": f"http_{status}"}) + "\n")
                     continue
-                body = r.body()
                 if len(body) < 5000 or b"Incapsula" in body[:2000]:
                     fails.append(f"{u}: challenged ({len(body)}B)")
                     continue
@@ -130,7 +158,7 @@ def main():
                 with open(os.path.join(BASE, "data", rel), "wb") as f:
                     f.write(body)
                 record(u, rel, body,
-                       r.headers.get("content-type", ""), "mbie_open_data")
+                       "application/octet-stream", u_src)
                 with open(DONE_F, "a") as f:
                     f.write(json.dumps({"url": u, "status": "ok"}) + "\n")
                 fetched += 1
