@@ -93,6 +93,7 @@ corpora:
     date_field: sitting_date
     title_field: title
     record_file: /opt/data/parliament-scraper/data/hansard_debates.jsonl
+    path_root: /opt/data/parliament-scraper   # raw_file: raw/hansard_*.pdf
     freshness_sla_hours: 168
 
   parliament-bills-historical:
