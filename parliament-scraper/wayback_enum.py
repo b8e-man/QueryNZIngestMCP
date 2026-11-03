@@ -26,8 +26,10 @@ CDX = "https://web.archive.org/cdx/search/cdx"
 UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"}
 
 SKIP_TYPES = ("calendar/ical", "alerts/maintenance", "ajax/")
-SLICES = [(2000, 2012), (2013, 2016), (2017, 2019), (2020, 2021),
-          (2022, 2023), (2024, 2025), (2026, 2026)]
+SLICES = [(1996, 1999), (2000, 2012), (2013, 2016), (2017, 2019),
+          (2020, 2021), (2022, 2023), (2024, 2025), (2026, 2026)]
+PREFIXES = ("www.parliament.nz/en/", "www3.parliament.nz/en/")
+STATE_F = os.path.join(BASE, "data", "wayback_enum_state.json")
 
 
 def cdx_slice(prefix, y0, y1):
@@ -38,7 +40,7 @@ def cdx_slice(prefix, y0, y1):
     for i in range(3):
         try:
             with urllib.request.urlopen(urllib.request.Request(CDX + "?" + q, headers=UA),
-                                        timeout=180) as r:
+                                        timeout=30) as r:
                 data = json.loads(r.read())
             return [(row[0], row[1]) for row in data[1:]]
         except Exception:
@@ -47,9 +49,24 @@ def cdx_slice(prefix, y0, y1):
 
 
 def main():
+    # budget/resume: track completed (prefix, slice) pairs so the daily cron
+    # (120s hard-kill) continues where it died instead of restarting. The
+    # whole walk is 2 prefixes x 8 slices; one slice per run is enough.
+    state = {"done": []}
+    if os.path.exists(STATE_F):
+        try:
+            state = json.load(open(STATE_F))
+        except Exception:
+            pass
+    done_slices = set(tuple(x) for x in state.get("done", []))
+
     found = {}
-    for prefix in ("www.parliament.nz/en/", "www3.parliament.nz/en/"):
+    walked = 0
+    for prefix in PREFIXES:
         for y0, y1 in SLICES:
+            key = f"{prefix}|{y0}-{y1}"
+            if key in done_slices:
+                continue
             rows = cdx_slice(prefix, y0, y1)
             if rows is None:
                 print(f"CDX failed: {prefix} {y0}-{y1}", file=sys.stderr)
@@ -58,10 +75,19 @@ def main():
                 path = url.split("://", 1)[-1].split("/", 1)[-1].lower()
                 if any(s in path for s in SKIP_TYPES):
                     continue
-                key = url.split("://", 1)[-1].split("?")[0].split("#")[0].rstrip("/").lower()
-                if ts > found.get(key, ("", ""))[1]:
-                    found[key] = (url, ts)
+                key2 = url.split("://", 1)[-1].split("?")[0].split("#")[0].rstrip("/").lower()
+                if ts > found.get(key2, ("", ""))[1]:
+                    found[key2] = (url, ts)
+            done_slices.add(key)
+            state["done"] = sorted(done_slices)
+            with open(STATE_F, "w") as f:
+                json.dump(state, f)
+            walked += 1
             time.sleep(1.5)
+            if walked >= 6:      # stay well inside the 120s cron window
+                break
+        if walked >= 6:
+            break
 
     done = set()
     if os.path.exists(MANIFEST_F):

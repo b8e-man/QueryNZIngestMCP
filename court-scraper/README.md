@@ -50,3 +50,26 @@ Planned with Arthur 2026-10-29 from his seven-row courts source map.
 3. District Court judgments path discovery.
 4. Employment/Environment/Coroners paths confirmation (row 5).
 5. JDO back catalogue — blocked; pursue via the MoJ automated-access thread.
+
+## Māori Land Court (2026-11-03)
+
+- JDO `/jdo-search-api` accepts court NAMES: `court='Māori Land Court'`
+  (100 judgments 2025, 76 2024, ~2 2020, none pre-2015) and
+  `court='Māori Appellate Court'` (14 2025, 4 2024). Citations are MB-style
+  ("[2025] Māori Appellate Court MB 45"). JDO's `court=All` includes these
+  rows (sorted deep in pages — earlier 300-row samples missed them).
+  `mlc_enum.py` year-shard walk guarantees completeness (cron 07:00 daily).
+- MLC bulk data captured: `data/mlc_data/` 27 files / 30MB — Māori Land
+  Updates 2011-2025 (PDF), National Lists of Māori Land Blocks 2016-2025
+  (xls/xlsx), National Registers of Māori Incorporations 2022-2025. Manifest:
+  `data/mlc_data_manifest.jsonl` (sha256 each). Source page re-checks on
+  `mlc_data_fetch.py` re-run (new editions appear as new URLs).
+- Full minute-book corpus lives in **Pātaka Whenua** (the court's e-record
+  portal: minutes, orders, judgments, minute book indexes, survey plans,
+  historic schedules). Entry: `customer.service.maorilandcourt.govt.nz/prweb/
+  PRAuth/MlcAnonymousUser` — a Pega app with guest-search (no login needed
+  per court's own guide). Pega auth dance behind a JS form → next step is a
+  Playwright session capturing the search XHRs. NOT yet captured.
+- The court's site is the punycode domain `www.xn--morilandcourt-wqb.govt.nz`
+  (macron ā). justice.govt.nz/courts/decisions/?Filter_Jurisdiction=24|468
+  = MLC + Māori Appellate Court views of JDO.
