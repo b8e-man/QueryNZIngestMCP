@@ -23,6 +23,7 @@ MANIFEST = os.path.join(DATA, "diary_pdfs_manifest.jsonl")
 
 by_url = {}
 by_base = {}
+by_resolved = {}
 missing_on_disk = 0
 for line in open(MANIFEST):
     m = json.loads(line)
@@ -34,17 +35,25 @@ for line in open(MANIFEST):
         continue
     by_url[m["url"]] = p
     by_base[urllib.parse.unquote(os.path.basename(m["url"].split("?")[0]))] = p
+    if m.get("resolved_from"):
+        by_resolved[m["resolved_from"]] = p
 
 stats = collections.Counter()
 rows = []
 for line in open(DIARIES):
     r = json.loads(line)
     u = r.get("source_url", "")
+    if r.get("path") and not os.path.exists(os.path.join(DATA, r["path"])):
+        del r["path"]          # stale (purged file) — re-link below
+        stats["stale_cleared"] += 1
     if r.get("path"):
         stats["already"] += 1
     elif u in by_url:
         r["path"] = by_url[u]
         stats["linked_url"] += 1
+    elif u in by_resolved:
+        r["path"] = by_resolved[u]
+        stats["linked_resolved"] += 1
     elif os.path.basename(u) in by_base:
         r["path"] = by_base[os.path.basename(u)]
         stats["linked_basename"] += 1
