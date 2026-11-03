@@ -57,6 +57,91 @@ def safe_name(name, url):
         name = name[:88].rstrip(". ") + "-" + h
     return name
 
+CITE_RE = re.compile(r"\[(\d{4})\] ([A-Z]{2,6}) (\d+)(?:-\d+)?")
+JDATE_RE = re.compile(r"\[(\d{1,2} \w+ \d{4})\]\s*$")
+COURT_BY_CITE = {
+    "NZSC": "supreme-court", "NZCA": "court-of-appeal", "NZHC": "high-court",
+    "NZDC": "district-court", "NZFC": "family-court", "NZYC": "youth-court",
+    "NZEnvC": "environment-court", "NZEmpC": "employment-court",
+    "NZACC": "accidents-compensation-tribunal", "NZIPT": "immigration-protection-tribunal",
+    "NZTT": "tenancy-tribunal", "NZDT": "disputes-tribunal",
+    "NZSSC": "social-security-appeal-authority", "NZLCDT": "lawyers-conveyancers-tribunal",
+    "NZREADT": "real-estate-agents-tribunal", "NZARLA": "alcohol-licensing-authority",
+    "NZMVDT": "motor-vehicle-disputes-tribunal", "NZTDT": "teachers-tribunal",
+    "NZHRRT": "human-rights-review-tribunal", "NZCorC": "coroners-court",
+    "NZWTO": "waitangi-tribunal", "NZERA": "era", "NZHPDT": "hpdt",
+}
+TRIB_SLUGS = {
+    "human-rights-review-tribunal": "human-rights-review-tribunal",
+    "tenancy-tribunal": "tenancy-tribunal", "tenancy-tribunals": "tenancy-tribunal",
+    "immigration-and-protection-tribunal": "immigration-protection-tribunal",
+    "lawyers-and-conveyancers-disciplinary-tribunal": "lawyers-conveyancers-tribunal",
+    "teachers-disciplinary-tribunal": "teachers-tribunal",
+    "real-estate-agents-disciplinary-tribunal": "real-estate-agents-tribunal",
+    "motor-vehicle-disputes-tribunal": "motor-vehicle-disputes-tribunal",
+    "motor-vehicle-disputes-tribunals": "motor-vehicle-disputes-tribunal",
+    "alcohol-regulatory-and-licensing-authority": "alcohol-licensing-authority",
+    "disputes-tribunal": "disputes-tribunal",
+    "social-security-appeal-authority": "social-security-appeal-authority",
+}
+
+
+def classify(rec, url):
+    """(court, doc_date, citation) from queue-row metadata + case name +
+    URL host/path. Court resolution chain: row tag -> citation code ->
+    host map -> tribunal URL slug. doc_date is the judgment's own date
+    (provider ask 2026-11-03), parsed from the JDO case-name bracket."""
+    name = rec.get("case_name", "")
+    court = rec.get("court", "") or ""
+    doc_date = rec.get("judgment_date", "")
+    citation = rec.get("citation", "")
+    m = CITE_RE.search(name)
+    if m:
+        citation = citation or f"[{m.group(1)}] {m.group(2)} {m.group(3)}"
+        court = court or COURT_BY_CITE.get(m.group(2), "")
+    d = JDATE_RE.search(name)
+    if d and not doc_date:
+        try:
+            from datetime import datetime as _dt
+            doc_date = _dt.strptime(d.group(1), "%d %B %Y").date().isoformat()
+        except ValueError:
+            pass
+    if not court:
+        p = urllib.parse.urlparse(url).path
+        for slug, tag in TRIB_SLUGS.items():
+            if f"/{slug}" in p:
+                court = tag
+                break
+    if not court:
+        court = COURT_BY_HOST.get(urllib.parse.urlparse(url).netloc, "")
+        if court == "tribunals":
+            court = ""  # generic bucket is what produced 'tribunals/unknown'
+    return court, doc_date, citation
+
+
+def store_bytes(rel, body):
+    """Byte-safe store: a refetched URL must never overwrite a different
+    earlier capture at the same path (107 record/file sha mismatches,
+    measured 2026-11-03). Same bytes = same path; different bytes get a
+    sha-suffixed sibling so every record's sha matches its own file."""
+    full = os.path.join(BASE, "data", rel)
+    if os.path.exists(full):
+        with open(full, "rb") as f:
+            if f.read() == body:
+                return rel
+        stem, ext = os.path.splitext(rel)
+        rel2 = f"{stem}-{hashlib.sha256(body).hexdigest()[:8]}{ext}"
+        full = os.path.join(BASE, "data", rel2)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "wb") as f:
+            f.write(body)
+        return rel2
+    os.makedirs(os.path.dirname(full), exist_ok=True)
+    with open(full, "wb") as f:
+        f.write(body)
+    return rel
+
+
 TERMINAL = ("ok", "http_404", "http_410")
 SLEEP = 1.0        # politeness between requests (govt site, ~1 req/s max)
 # justice.govt.nz /robots.txt disallows /assets/ — user directed direct fetch
@@ -172,17 +257,22 @@ def main():
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
     def record_doc(url, kind, body, content_type, path, case_slug, court,
-                   discovered_via, case_name=""):
+                   discovered_via, case_name="", doc_date="", citation=""):
         sha = hashlib.sha256(body).hexdigest()
+        out = {
+            "url": url, "kind": kind, "fetched_at": now_iso(),
+            "http_status": 200, "sha256": sha, "path": path,
+            "bytes": len(body), "content_type": content_type,
+            "case_slug": case_slug, "court": court,
+            "case_name": case_name,
+            "discovered_via": discovered_via,
+        }
+        if doc_date:
+            out["doc_date"] = doc_date   # the judgment's own date
+        if citation:
+            out["citation"] = citation
         with open(RECORDS_F, "a") as f:
-            f.write(json.dumps({
-                "url": url, "kind": kind, "fetched_at": now_iso(),
-                "http_status": 200, "sha256": sha, "path": path,
-                "bytes": len(body), "content_type": content_type,
-                "case_slug": case_slug, "court": court,
-                "case_name": case_name,
-                "discovered_via": discovered_via,
-            }, ensure_ascii=False) + "\n")
+            f.write(json.dumps(out, ensure_ascii=False) + "\n")
         return sha
 
     def enqueue(u):
@@ -232,9 +322,8 @@ def main():
                     continue
                 raw_fname = urllib.parse.unquote(url.rstrip("/").split("/")[-1])
                 fname = safe_name(raw_fname, url)
-                court = (rec.get("court")
-                         or COURT_BY_HOST.get(urllib.parse.urlparse(url).netloc, ""))
-                year = year_of(raw_fname, url)
+                court, doc_date, citation = classify(rec, url)
+                year = year_of(raw_fname, url, doc_date, citation)
                 # media releases are a different doc type (communications,
                 # not judgments) — own lane, own storage, own record kind.
                 # courtsofnz names twins both 'MR-<cite>.pdf' and
@@ -255,13 +344,11 @@ def main():
                     kind = rec["kind"]
                     if kind == "report":
                         rel = os.path.join("pdfs", "reports", year, fname)
-                os.makedirs(os.path.dirname(os.path.join(BASE, "data", rel)),
-                            exist_ok=True)
-                with open(os.path.join(BASE, "data", rel), "wb") as f:
-                    f.write(pb)
+                rel = store_bytes(rel, pb)
                 record_doc(url, kind, pb, pct, rel,
                            "", court, source or "cdx_index",
-                           case_name=rec.get("case_name", ""))
+                           case_name=rec.get("case_name", ""),
+                           doc_date=doc_date, citation=citation)
                 record_done(url, "ok", sha256=hashlib.sha256(pb).hexdigest())
                 added_docs += 1
             except Exception as e:
@@ -283,14 +370,14 @@ def main():
                 fails.append(f"{url}: http_{status}")
                 record_done(url, f"http_{status}")
                 continue
-            # raw case page
-            page_path = os.path.join("pages", slug + ".html")
-            with open(os.path.join(BASE, "data", page_path), "w",
-                      encoding="utf-8") as f:
-                f.write(body.decode("utf-8", errors="replace"))
+            # raw case page (byte-exact; earlier decode-write corrupted
+            # non-UTF8 bytes — provider matched by sha256)
+            court, doc_date, citation = classify(rec, url)
+            page_path = store_bytes(os.path.join("pages", slug + ".html"), body)
             record_doc(url, rec.get("kind") or "case_page", body, ctype, page_path,
-                       slug, rec.get("court", ""), rec.get("source") or "queue",
-                       case_name=rec.get("case_name", ""))
+                       slug, court, rec.get("source") or "queue",
+                       case_name=rec.get("case_name", ""),
+                       doc_date=doc_date, citation=citation)
             ok += 1
 
             # PDFs on the case page
@@ -311,8 +398,10 @@ def main():
                         continue
                     raw_fname = purl.rstrip("/").split("/")[-1]
                     fname = safe_name(raw_fname, purl)
+                    p_court, p_date, p_cite = classify(rec, purl)
                     year_m = re.search(r"/cases/(\d{4})/", purl)
-                    year = year_m.group(1) if year_m else "unknown"
+                    year = (year_m.group(1) if year_m
+                            else year_of(raw_fname, purl, p_date, p_cite))
                     if ("-media-release" in raw_fname.lower()
                             or raw_fname.lower().startswith("mr-")):
                         kind = "media_release"
@@ -321,12 +410,10 @@ def main():
                     else:
                         kind = "judgment_pdf"
                         rel = os.path.join("pdfs", year, fname)
-                    os.makedirs(os.path.dirname(os.path.join(BASE, "data", rel)),
-                                exist_ok=True)
-                    with open(os.path.join(BASE, "data", rel), "wb") as f:
-                        f.write(pb)
+                    rel = store_bytes(rel, pb)
                     record_doc(purl, kind, pb, pct, rel,
-                               slug, "", "case_page")
+                               slug, p_court, "case_page",
+                               doc_date=p_date, citation=p_cite)
                     record_done(purl, "ok", sha256=hashlib.sha256(pb).hexdigest())
                     added_docs += 1
                 except Exception as e:

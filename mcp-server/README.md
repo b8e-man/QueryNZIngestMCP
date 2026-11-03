@@ -118,6 +118,63 @@ One full pass, then incremental forever. Fresh arrivals show up as
 - **Measurements, not conclusions.** Statistics arrive with error bars;
   interpretation is the consumer's job.
 
+## Corpus acquisition & operations (2026-11-03)
+
+Method per corpus (crawl / API / bulk / archive), refresh cadence, and the
+meaning of each record's `date`. Block behaviour is documented honestly,
+including where terms or robots disagree with practice.
+
+- **courts** — JDO JSON API (undocumented `/jdo-search-api`, enumeration),
+  courtsofnz case pages, tribunal sites (ERA, HRRT, HPDT, Waitangi, coroners
+  — listings + Wayback CDX for history). Capture tick 5 min; JDO backwalk
+  complete 2026-11-03 (2005→2026 enumerated). `date` = fetch date; `doc_date`
+  = the judgment's own date (parsed from the JDO case name; backfilled
+  2026-11-03, covers JDO-era records). Files: byte-exact, `download` serves
+  bytes + verbatim `pdftotext -layout` text (computed on read).
+- **gets** — GETS public lists (open/closed/awarded) + Wayback CDX for the
+  pre-2014 hidden era. Plain browser-UA fetches, 1 req/s. Lists refreshed
+  daily; capture tick 5 min. `date` = fetch date; page fields carry `open_date`,
+  `close_date`, `award_date` (the document's own dates). Tender documents sit
+  behind a free login — **never taken**. NOTE: GETS terms (cl. 3.2(i)(e)) bar
+  "any spider or robot"; automated capture proceeds on the operator's
+  instruction, disclosed here. MBIE bulk award CSVs are WAF-blocked to all
+  automated routes (403 even via real browser + NZ residential IP); Wayback
+  fallback is wired and retries daily.
+- **beehive** — sitemap/RSS enumeration, body capture via headless Chromium
+  through the site's JS WAF challenge (real browser, real UA, residential IP;
+  no credentials, no login exists). Collect 2h, bodyfetch 6h, extract 3–5 min.
+  `date` = Beehive's own `published_at`.
+- **parliament-\*** (written-questions, bills, sops, sc-reports,
+  sc-submissions, bills-historical) — parliament.nz JSON API (passes the WAF
+  as-is). Queue tick 5 min–1 h. `date` = the API's own field per corpus
+  (`lastModified`, `lastStageDate`, `publicationDate`). Known: 17,619 WQ rows
+  changed text on 2026-10-27 without `updated_at` moving (source-side drift,
+  recorded, not hidden).
+- **parliament-hansard-debates** — daily sitting PDFs (parliament resource
+  API), `pdftotext -layout` text stored beside the raw PDF (`raw_file`).
+  `date` = sitting date. House rose 23 Sep 2026; corrected versions of 35
+  days (from 28 Apr 2026) exist only as drafts upstream.
+- **parliament-diaries** — ministers' diary releases scraped from Beehive.
+  `date` = meeting date. Releases without a PDF address are records-only.
+- **parliament-hansard-index** — parliament sitemap pages (URL + lastmod).
+- **parliament-wayback** — Wayback CDX + replay of parliament.nz pages.
+  `date` = snapshot timestamp. Archive coverage thins after 2016 (source-side).
+
+Block/CAPTCHA/login policy: no logins, no credentials, no CAPTCHA solving.
+Where a site serves a JS challenge to non-browser clients (beehive), capture
+uses a real browser on a residential IP and is disclosed above. Where terms
+or robots restrict crawling (GETS terms; justice.govt.nz `/assets/` +
+`/jdo_documents/` robots exclusions), automated access is done on the
+operator's explicit instruction at low cadence and disclosed here — a
+consumer may exclude such content.
+
+Change feed (`changes`): fresh arrivals + records whose `updated_at` moved,
+plus first-class lifecycle **events** from the daily re-verify pass
+(06:45): `removed` (suppression/takedown), `content_changed` (byte-level
+change, new capture appended as its own record; pages with per-request
+tokens are compared semantically so token churn is not a change),
+`restored`. A removal is an event, never silence.
+
 ## Layout
 
 - `corpora.yaml` — which corpora are mounted, where their files live, date/id

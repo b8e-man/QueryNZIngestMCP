@@ -245,9 +245,17 @@ class Corpus:
         if cap:
             rec["capture"] = cap
         proot = self.cfg.get("path_root")
-        if proot and row.get("path"):
-            # resolution aid only — the raw `path` stays as-received in fields/capture
-            rec["file"] = os.path.join(proot, str(row["path"]).lstrip("/"))
+        rf = row.get("path") or row.get("raw_file")
+        if rf:
+            # resolution aid only — the raw `path`/`raw_file` stays
+            # as-received in fields/capture. Order: path_root, then the
+            # record file's own dir (Hansard raw/hansard_*.pdf), then
+            # pages_dir (docs corpora captures).
+            base = (proot
+                    or os.path.dirname(self.cfg.get("record_file", "") or "")
+                    or self.cfg.get("pages_dir"))
+            if base:
+                rec["file"] = os.path.join(base, str(rf).lstrip("/"))
         return rec
 
     def _append(self, rec: dict) -> dict:
@@ -327,6 +335,10 @@ class Corpus:
                 if row.get("fetched_at"):
                     old["arrived"] = row["fetched_at"]
                 old["capture"] = dict(row)
+                if row.get("path") and pages:
+                    f = _resolve_page(pages, row["path"])
+                    if f:
+                        old["file"] = f
                 continue
             rec = staged.pop(rid, None)
             if rec is None:
@@ -334,6 +346,10 @@ class Corpus:
             if row.get("fetched_at"):
                 rec["arrived"] = row["fetched_at"]
             rec["capture"] = dict(row)   # provenance: as-received, unfaked
+            if row.get("path") and pages:
+                f = _resolve_page(pages, row["path"])
+                if f:
+                    rec["file"] = f
             self._append(rec)
 
         for rec in staged.values():              # pass 3: extracted-only tail
@@ -503,10 +519,35 @@ def changes(corpus: str, since: str, cursor: int = 0, limit: int = 100,
                  key=lambda r: (r["updated_at"], r["seq"]))
     page = sel[cursor:cursor + lim]
     out = [_rec_out(r, include_text) for r in page]
+    # Lifecycle events from the re-verify pass (removals/suppressions,
+    # content churn, restorations) — a removal is a first-class event,
+    # not silence. Source: change_events.jsonl beside the record file
+    # (see court-scraper/reverify_courts.py). Kept in their own key so
+    # record parsers are unaffected.
+    events = []
+    ev_path = os.path.join(os.path.dirname(c.cfg.get("record_file", "")),
+                           "change_events.jsonl")
+    if os.path.exists(ev_path):
+        try:
+            with open(ev_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        e = json.loads(line)
+                    except ValueError:
+                        continue
+                    if e.get("detected_at", "") > since:
+                        events.append(e)
+        except OSError:
+            pass
+        events.sort(key=lambda e: e.get("detected_at", ""))
+        events = events[cursor:cursor + lim]
     meter("changes", {"corpus": corpus}, len(out), (time.time() - t0) * 1000)
     return {"corpus": corpus, "since": since, "total": len(sel),
             "cursor": cursor, "next_cursor": cursor + len(out),
-            "records": out}
+            "records": out, "events": events}
 
 
 @mcp.tool()
@@ -941,8 +982,8 @@ def _rec_at(corpus: str, seq: str):
 def _stored_file(rec: dict) -> str:
     f = rec.get("file")
     if not f:
-        raise ValueError("no stored bytes for this record "
-                         "(its corpus declares no path_root)")
+        raise ValueError("no stored bytes resolvable for this record "
+                         "(no path/raw_file/capture file in its store)")
     if not os.path.exists(f):
         raise ValueError(f"stored file missing on host: {f}")
     return f

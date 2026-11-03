@@ -37,6 +37,50 @@ UA = ("Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 "
 SLEEP = 1.0
 TERMINAL = ("ok", "http_404", "http_410")
 TITLE_RE = re.compile(r"<title>(.*?)</title>", re.S | re.I)
+FIELD_RE = re.compile(
+    r'<td class="label-cell">(.*?)&nbsp;:\s*</td>\s*<td[^>]*>(.*?)</td>', re.S)
+OVERVIEW_RE = re.compile(
+    r'>Overview</span>.*?</div>(.*?)(?:<div class="detail-divider"|$)', re.S)
+
+
+def strip_tags(s):
+    s = re.sub(r"<[^>]+>", " ", s)
+    return re.sub(r"\s+", " ", s).replace("\xa0", " ").strip()
+
+
+def parse_fields(html):
+    """The page's own fields (provider ask 2026-11-03): every label:value
+    pair the detail table carries — open date, coverage, categories,
+    regions, exemption reason, prequalifications, and on awards the
+    supplier and award date. Classification metadata; the page itself is
+    stored byte-exact regardless."""
+    out = {}
+    for lab, val in FIELD_RE.findall(html):
+        lab = strip_tags(lab).rstrip(":").strip()
+        val = strip_tags(val)
+        if lab and val:
+            out[lab] = val[:600]
+    m = OVERVIEW_RE.search(html)
+    if m:
+        out["Overview"] = strip_tags(m.group(1))[:2000]
+    return out
+
+
+def store_bytes(rel, body):
+    """Never overwrite a different earlier capture at the same path —
+    same sha-mismatch exposure as the courts lane (2026-11-03)."""
+    full = os.path.join(BASE, "data", rel)
+    if os.path.exists(full):
+        with open(full, "rb") as f:
+            if f.read() == body:
+                return rel
+        stem, ext = os.path.splitext(rel)
+        rel = f"{stem}-{hashlib.sha256(body).hexdigest()[:8]}{ext}"
+        full = os.path.join(BASE, "data", rel)
+    os.makedirs(os.path.dirname(full), exist_ok=True)
+    with open(full, "wb") as f:
+        f.write(body)
+    return rel
 
 
 def now_iso():
@@ -132,6 +176,20 @@ def main():
         for k in ("tender_type", "buyer_org", "reference_no", "close_date"):
             if rec.get(k):
                 out[k] = rec[k]
+        if rec.get("page_fields"):
+            out["page_fields"] = rec["page_fields"]
+            pf = rec["page_fields"]
+            for src_k, dst_k in (("Open Date", "open_date"),
+                                 ("Tender Coverage", "coverage"),
+                                 ("Categories", "categories"),
+                                 ("Regions", "regions"),
+                                 ("Exemption Reason", "exemption_reason"),
+                                 ("Required Pre-qualifications", "prequalifications"),
+                                 ("Supplier", "award_supplier"),
+                                 ("Awarded To", "award_supplier"),
+                                 ("Award Date", "award_date")):
+                if src_k in pf and not out.get(dst_k):
+                    out[dst_k] = pf[src_k]
         with open(RECORDS_F, "a") as f:
             f.write(json.dumps(out, ensure_ascii=False) + "\n")
         return sha
@@ -157,10 +215,11 @@ def main():
                 record_done(url, f"http_{status}")
                 continue
             rfx = rec.get("rfx_id", url.split("id=")[-1])
-            rel = os.path.join("pages", f"gets-{rfx}.html")
-            with open(os.path.join(BASE, "data", rel), "wb") as f:
-                f.write(body)
-            m = TITLE_RE.search(body.decode("utf-8", errors="replace"))
+            html_text = body.decode("utf-8", errors="replace")
+            rec = dict(rec)
+            rec["page_fields"] = parse_fields(html_text)
+            rel = store_bytes(os.path.join("pages", f"gets-{rfx}.html"), body)
+            m = TITLE_RE.search(html_text)
             title = rec.get("title", "")
             if m and not title:
                 # "GETS | <Org> - <Title> - ..." — classification metadata
