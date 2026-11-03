@@ -125,6 +125,7 @@ corpora:
     date_field: publicationDate
     title_field: title
     record_file: /opt/data/parliament-scraper/data/api_queue/sc-reports.jsonl
+    path_root: /opt/data/parliament-scraper
     freshness_sla_hours: 24
 
   parliament-papers:
@@ -135,6 +136,17 @@ corpora:
     date_field: publicationDate
     title_field: title
     record_file: /opt/data/parliament-scraper/data/api_queue/papers.jsonl
+    path_root: /opt/data/parliament-scraper
+    freshness_sla_hours: 24
+
+  parliament-sc-evidence:
+    label: "Select committee evidence and advice (submissions, advice papers)"
+    source_category: parliamentary-record
+    kind: records
+    id_field: id
+    date_field: publicationDate
+    title_field: title
+    record_file: /opt/data/parliament-scraper/data/api_queue/sc-evidence.jsonl
     freshness_sla_hours: 24
 
   parliament-sc-submissions:
@@ -159,6 +171,17 @@ corpora:
     record_file: /opt/data/court-scraper/records.jsonl
     path_root: /opt/data/court-scraper/data   # resolves relative `path` -> absolute `file`
     freshness_sla_hours: 24
+
+  court-mlc-data:
+    label: "Māori Land Court bulk datasets (national block lists, incorporation registers, land updates)"
+    source_category: judicial-decision
+    kind: records
+    id_field: id
+    date_field: fetched_at
+    title_field: title
+    record_file: /opt/data/court-scraper/data/mlc_data_records.jsonl
+    path_root: /opt/data/court-scraper
+    freshness_sla_hours: 720
 
   gets:
     label: "NZ govt tenders — GETS notices + awards (MBIE procurement)"
