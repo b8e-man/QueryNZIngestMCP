@@ -147,13 +147,16 @@ res = {"resolved": 0, "unresolved": [], "errors": []}
 for name, (mn, mon, yr) in targets.items():
     hit = None
     fallback = None
+    mi = MON.index(mon) + 1
+    toks = [f"{mon.lower()} {yr}", f"{yr}-{mi:02d}", f"{yr}-{mi}", f"{yr}_{mi:02d}",
+            f"{mi:02d}-{yr}", f"{yr}/{mi:02d}", f"{yr} {mi:02d}", f"{mi:02d} {yr}"]
     for href, text in pdfs_by_minister.get(mn, []):
         t = text.lower()
         base_name = urllib.parse.unquote(href.split("/")[-1].split("?")[0]).lower()
         if base_name == name.lower():
             hit = href
             break
-        if fallback is None and mon.lower() in t and yr in t:
+        if fallback is None and yr in t and any(tk in t for tk in toks):
             fallback = href
     hit = hit or fallback
     if hit and not hit.startswith("http"):
