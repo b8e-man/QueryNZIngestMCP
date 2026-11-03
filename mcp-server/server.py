@@ -134,6 +134,10 @@ class Corpus:
         self._gen = 0              # bumped whenever the index changes
         self._fresh_cache = None
         self._lock = threading.Lock()
+        self._persist = {}         # id -> [seq, content-hash] — durable state
+        self._sidecar_log = []     # sidecar lines awaiting flush
+        self._next_seq = 0
+        self._load_sidecar()
         self.reload(force=True)
 
     def _files(self):
@@ -183,6 +187,8 @@ class Corpus:
                 self._load_docs()
             else:
                 self._load_records()
+            self.records.sort(key=lambda r: r["seq"])
+            self._sidecar_flush()
             self._gen += 1
             self._fresh_cache = None
 
@@ -214,6 +220,48 @@ class Corpus:
             except ValueError:
                 continue
 
+    # -- durable per-id state (stable seq + content hash) --------------------
+    # Written append-only, last line per id wins. Keeps `seq` — and therefore
+    # feed positions — stable across rebuilds: removals or in-place rewrites
+    # in source files no longer move other records to a lower position.
+    def _sidecar_path(self) -> str:
+        d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state")
+        os.makedirs(d, exist_ok=True)
+        return os.path.join(d, self.name + ".jsonl")
+
+    def _load_sidecar(self):
+        try:
+            with open(self._sidecar_path()) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        r = json.loads(line)
+                    except ValueError:
+                        continue
+                    self._persist[r["id"]] = [r["seq"], r.get("h", "")]
+        except FileNotFoundError:
+            pass
+        self._next_seq = max((v[0] for v in self._persist.values()),
+                             default=-1) + 1
+
+    def _sidecar_put(self, rid: str, seq: int, h: str):
+        self._persist[rid] = [seq, h]
+        self._sidecar_log.append(json.dumps({"id": rid, "seq": seq, "h": h}))
+
+    def _sidecar_flush(self):
+        if not self._sidecar_log:
+            return
+        with open(self._sidecar_path(), "a") as f:
+            f.write("\n".join(self._sidecar_log) + "\n")
+        self._sidecar_log = []
+
+    def _date_val(self, row: dict):
+        dfk = self.cfg.get("date_field", "")
+        dfk = dfk if isinstance(dfk, list) else [dfk]
+        return next((row.get(k) for k in dfk if k and row.get(k)), None)
+
     def _row_to_rec(self, row: dict, text: str, arrived: str = "") -> dict:
         rid = str(row.get(self.cfg["id_field"]) or row.get("url")
                   or hashlib.sha256(json.dumps(row, sort_keys=True).encode()).hexdigest()[:16])
@@ -222,7 +270,7 @@ class Corpus:
         title = next((str(row[k]) for k in tfs if k and row.get(k)), "")
         rec = {
             "id": rid,
-            "date": norm_date(row.get(self.cfg["date_field"])),
+            "date": norm_date(self._date_val(row)),
             "title": title[:300],
             "text": text,
             "fields": dict(row),
@@ -232,9 +280,14 @@ class Corpus:
                                       or row.get("fetched") or ""),
             # when this version of the record landed (source-provided stamps)
             "updated_at": str(row.get("extracted_at") or row.get("fetched_at")
+                              or row.get("_fetched_at")
                               or row.get("_collected") or row.get("fetched")
                               or row.get("lastModified") or ""),
         }
+        # semantic content hash: separates "row re-stamped, same content"
+        # from "row rewritten in place with new content" (_append/_update)
+        rec["_chash"] = hashlib.sha1(
+            (title + "\n" + text).encode("utf-8", "replace")).hexdigest()
         ann = sorted(k for k in ANNOTATION_FIELDS if row.get(k))
         if ann and row.get("model"):
             rec["annotation"] = {"fields": ann,
@@ -259,17 +312,36 @@ class Corpus:
         return rec
 
     def _append(self, rec: dict) -> dict:
-        rec["seq"] = len(self.records)
+        rid, h = rec["id"], rec.get("_chash", "")
+        ent = self._persist.get(rid)
+        if ent is not None:
+            rec["seq"] = ent[0]                  # stable across rebuilds
+            if ent[1] and ent[1] != h:
+                # content changed while the row's own stamps stood still
+                rec["updated_at"] = now_iso()
+            if ent[1] != h:
+                self._sidecar_put(rid, ent[0], h)
+        else:
+            rec["seq"] = self._next_seq
+            self._next_seq += 1
+            self._sidecar_put(rid, rec["seq"], h)
         self.records.append(rec)
-        self._by_id[rec["id"]] = rec
-        self._seen.add(rec["id"])
+        self._by_id[rid] = rec
+        self._seen.add(rid)
         return rec
 
     def _update(self, rec: dict, row: dict):
         old = self._by_id[rec["id"]]
+        nh = rec.get("_chash", "")
+        changed = bool(nh) and nh != old.get("_chash")
         old["date"], old["title"] = rec["date"], rec["title"]
         old["text"], old["fields"] = rec["text"], rec["fields"]
-        old["updated_at"] = rec.get("updated_at") or now_iso()
+        old["updated_at"] = (now_iso() if changed
+                             else (rec.get("updated_at") or now_iso()))
+        if nh:
+            if changed:
+                self._sidecar_put(old["id"], old["seq"], nh)
+            old["_chash"] = nh
         if rec.get("annotation"):
             old["annotation"] = rec["annotation"]
         old.pop("_words", None)
@@ -383,7 +455,9 @@ class Corpus:
                         old[k] = rec[k]
                         added = True
                 if added:
-                    old["updated_at"] = rec.get("updated_at") or now_iso()
+                    if rec.get("_chash"):
+                        old["_chash"] = rec["_chash"]
+                    old["updated_at"] = now_iso()
                 continue
             self._append(rec)
 
@@ -433,7 +507,7 @@ def _fresh(name: str) -> Corpus:
 
 def _rec_out(r: dict, include_text: bool = True) -> dict:
     out = {"seq": r["seq"], "id": r["id"], **r["fields"]}
-    if r["date"] and "date" not in out:
+    if r["date"] and not out.get("date"):
         out["date"] = r["date"]
     if r.get("updated_at"):
         out["updated_at"] = r["updated_at"]

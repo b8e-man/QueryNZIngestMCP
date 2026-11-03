@@ -176,11 +176,19 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+LAST_HEADERS = {}      # selected response headers of the last fetch (Q5)
+KEEP_HEADERS = ("Content-Type", "Content-Length", "Last-Modified", "ETag",
+                "Date", "Content-Encoding", "Cache-Control")
+
+
 def fetch(url, timeout=30):
     """GET -> (status, body_bytes, content_type). Raises on network errors."""
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
+            LAST_HEADERS.clear()
+            LAST_HEADERS.update({k: v for k, v in r.headers.items()
+                                 if k.title() in KEEP_HEADERS})
             return r.status, r.read(), r.headers.get("Content-Type", "")
     except urllib.error.HTTPError as e:
         return e.code, b"", ""
@@ -263,6 +271,7 @@ def main():
             "url": url, "kind": kind, "fetched_at": now_iso(),
             "http_status": 200, "sha256": sha, "path": path,
             "bytes": len(body), "content_type": content_type,
+            "http_headers": dict(LAST_HEADERS),   # Q5: response headers kept
             "case_slug": case_slug, "court": court,
             "case_name": case_name,
             "discovered_via": discovered_via,
