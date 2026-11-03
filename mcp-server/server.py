@@ -368,7 +368,23 @@ class Corpus:
                                 if isinstance(v, str))
             rec = self._row_to_rec(row, text)
             if rec["id"] in self._by_id:
-                continue                 # duplicate id: first record wins
+                # duplicate id: first record keeps its capture bytes, but
+                # later rows ENRICH missing fields (append-only corrections,
+                # e.g. GETS page_fields backfill 2026-11-03). Enrichment
+                # moves updated_at so the change feed shows it.
+                old = self._by_id[rec["id"]]
+                added = False
+                for k, v in (rec.get("fields") or {}).items():
+                    if v not in (None, "") and old.get("fields", {}).get(k) in (None, ""):
+                        old.setdefault("fields", {})[k] = v
+                        added = True
+                for k in ("doc_date", "citation", "file", "capture"):
+                    if rec.get(k) and not old.get(k):
+                        old[k] = rec[k]
+                        added = True
+                if added:
+                    old["updated_at"] = rec.get("updated_at") or now_iso()
+                continue
             self._append(rec)
 
     # -- freshness (data-about-the-data, computed from internal timestamps) --
