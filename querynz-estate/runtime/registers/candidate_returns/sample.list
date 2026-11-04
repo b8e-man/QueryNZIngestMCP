@@ -1,0 +1,23 @@
+# registers/candidate_returns/sample.list: hashes and key: lines only. Each return names the case it holds.
+03415da00f198bcd0a169e3f0629b211980c20adaca4b35c60752ada66c10a6c  text 2020 form, parts sum, equal to the spreadsheet
+0817fd443fca833126b7ab6c125f9cd3f6544c51e90fd85123fe88d0708d4fdc  text 2023 form with loans, parts sum
+2a80eb0797d785a11d956aad8e82c46890f0ae4f4b074cda17b67fa33ae0cbb6  a form field prints four decimals (1271.3005)
+3f386c8410e02e079fee897831b08a2cb42bebb42096c21913669c02e9784d01  the figure typed in the step cell, the form's $0.00 left in the parts
+27dedc0e25d6cf622ee7277b215e6199694b11943891f93030066e27d356ac61  typed figures over the form's printed 0 (0 $8,800.00)
+0178de29a93f3eee271560c20eeadf7b5921ad98123eb6dc855d6c9e16cf9f16  scan: the stored page reading, totals only
+856389aab6c29dfe9e425365891f8812cd55a7ef9160739ab0beb37be7aade21  a scanner's own OCR layer without the heading: the stored page reading
+0e01e189ba2cd6daf4eb88a76bdab5d934ea8f996d35ac9f54301a6b719dea37  reads under its own arithmetic; differs from the spreadsheet
+fde6a63114d207a23f8c160c1f1e019d53561da4820c3db8471fe920c6087d4c  set aside: the expenses parts do not sum to the printed total
+5403fbd371224c0df499c9289fa82efcf16aadc269061e3421391bd28363f5f2  no year in the path: the form's own title names the election
+00606b3a515301ff672bac6d3b0d5f354c64d7193b466463d70fddef2a0a159b  scan with no stored page reading: set aside for a re-read
+4967a92235d84e7f833d882a6c5fabf99870784016a12ade52f04b944118101a  the 2022 Tauranga by-election, placed by its file name
+00efc0ca04122d3fc0f6ea877aa1759ef254019e8ff98f3207b9f21218083f9d  replaced: the listing links the amendment
+b0aa29180be48eec12662f245389b2341e52c4e56da62b601dad0d035c58b9e2  the amendment that replaces it
+8cc3c5beb63e4e1458859cc8ebf1a7a46777dd35bf8abe31e998af848300a9de  Part A set aside: the names the cut leaves hold a street word
+49d35da5cdd2eaebb8ea6b5bbaf5eb1ad9556465fed4fb4f9a6c93ab9d131018  Part A on a candidate's copy of the form without the part's heading
+0703fb5d1b87063b1552f7170542680262de966885bab2c3a4eaf540301543f7  Part A from pixels: the stored page reading, reconciled
+037200905eef56fe39ab6258e32f922c164f30246d96066691a9e2cf260e3463  Part A from pixels refused: the reader went down the columns
+ca579c46524e9734f271798bf12443f0af37da14b042e50c8ab1250af435b244  a scanner's text layer with no printed total: set aside
+13e5f25572ae9b9f717c5ae9844200818fbaf2f73e6dc048924a3f284b9e1b10  ruling 66: the expenses parts $0.03 over the printed total, published on the total with an issue
+0fcf5013488de0937ba9d58f85d786e5f77cc612e9acce62ef59b3ae64b03143  ruling 66: the expenses parts a cent under the printed total, the issue named
+key: empty-store 00606b3a515301ff672bac6d3b0d5f354c64d7193b466463d70fddef2a0a159b

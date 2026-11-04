@@ -1,0 +1,114 @@
+# registers/charities/sample.list: hashes and key: lines only. Pages of the feed landed by the capture on 20 and 21
+# October 2026. `key: <feed set> <the feed's id>` names the rows read from a set's pages; a set with no key line (the
+# code lists, Groups) is read whole. The documents about the feed are the capture's cases and are not read as pages.
+# the feed's metadata (every entity set, its key and fields)
+4c6044da8e6750d6f1bc015e7b586776b8aa4566e7ce9b207deed9a4f1f23e8b
+# the open-data page: the terms (CC BY 3.0 NZ, the 1,000-row limit, the email-address limit)
+34e09f96ffb44c0e970afa91a9b6198c0ea94d2b14a194c7ea206faa8ce8d097
+# the code lists
+1884789d4e0f12220c8ecb55982a6124a91ba0fbcb40f57bc8039fd963a82ab5
+28a5fcaaa0bf261b75f7b72c8b667fa9f8582e80d200e89cc5093329be2ecc6d
+9bf904be2936b202967c68982a74149f4f4047b9e07dfe6f99ef285e5541eda1
+a1fa974d895818f76a5137d641e7c12c653615b77130a06e9886cf9015c858fc
+65e26b893fa9753f2652646e6e95f4768ca0fd8cec1d058034a67d75ead05db3
+096cd46a0a021f648663c6d40d979d84451ad0592bcb43425113fda6b353ecbb
+7893020712750726484e09c6419b0d1159304fb1f84dd234620aba27b8f7dee8
+eb031491a4078f41223e7f01ced33219cbd61040e36bc92e81ecec9a94700313
+c105e70f0effc5b22a8f9dea9b0d04987d33385b7aff7acd9076e0e2ee2ebdaa
+# Groups, the whole set (357 rows)
+610afd8fbcd60229e01373d412bae03d12923c2e33e8e37551d76e369e85b0db
+# Organisations: the capture's first page (keys 32584 to 33583): a group member, registered, with a past and a
+# current officer and a return; a deregistered charity; a removed one
+8b8c330e98358148cb8adbcb62c7b8c88b2c3842852047e1a960b4afffe01e9b
+key: Organisations 33055
+key: Organisations 32584
+key: Organisations 32680
+# the address for service by legal structure: shown for an incorporated society, a company and a trust board
+# incorporated under its Act; withheld for an unincorporated trust, an unincorporated organisation and "Other"
+key: Organisations 32585
+key: Organisations 32586
+key: Organisations 32589
+key: Organisations 32601
+key: Organisations 32654
+key: Organisations 32773
+# the register's own view of that page's organisations (vOrganisations, keys 32584 to 33583): the names it
+# gives each one's main sector, activity, beneficiary and group, against ours (check 3)
+0b8ccfbfa6d6f5446d143d5b87047a6d13a09e58665d28203373c6a735e1d50c
+# a number with a suffix (CC…-1), kept whole and apart from its base
+9d6f9460b3d479763f33c7fb9a8a286cf45a1376a1630fd7a4ae4eff50a328f2
+key: Organisations 51802
+# one register number held by two organisations: both set aside, and an officer of one
+2f26c93a72a43799d86bb9539569f4bf28b82835a471689f4a3c547be0fd3457
+key: Organisations 80395
+key: Organisations 80397
+# no register number: set aside, and its return with it
+cb9821e17c282f62a432efd5ce9d59dc70995c22f1f9f5651bb082136dde228b
+key: Organisations 69084
+# a street address with an email address in one of its parts (the part dropped)
+8763cd55f8d9b1a269e44bbb5dfe8374f3cec66303db155deabf91b014077a04
+key: Organisations 44934
+# an NZBN failing its check digit (left empty)
+f70f94719f57c39165ce8d49b80df1e44462baac2a43ae389f90e6c53887a24c
+key: Organisations 34292
+# the organisations of the officers and returns below
+ea33103f0943a874f7b6dc519074e0f3084ceb38c2e0f6375bcd12a3b3c28958
+key: Organisations 35490
+key: Organisations 34748
+059fd29e01211437f90b30bdc0a17a9177c8b4d99449e5d23222e3f8d91d45ee
+key: Organisations 35763
+821a27131c92400da3619c711f2d96a64269888d72fe894333f90727973aa7b2
+key: Organisations 37966
+key: Organisations 37833
+5d14a8481bad806041afa57d5ab04214309b32ad3223e8a0543784985c68146e
+key: Organisations 49203
+cc65c6c4de8d84d77de2e73d8826b4163efdb2f6dbbb0352edbcf915460b62d9
+key: Organisations 59698
+d4c24ca0406112402387b856a57095e02c061482c7740ce6670c8f3d1c30edaf
+key: Organisations 71569
+a4dd93ad30d05f66d2b49e5b20ff9e8e95a831e85d806856f683ac7aa7da5ca0
+key: Organisations 73239
+key: Organisations 73334
+975dfbffcf430ad9e661b4aeeb91a2247b822bd7442ac9181f3fc6152ae5586d
+key: Organisations 44155
+# Officers: the register's status Disqualified while its declaration says not disqualified; a past officer whose
+# declaration says false (not flagged); the group member's past officer, with the register's end, and a current
+# one; a body corporate; a row with no name at all (set aside); an officer of the two-held number (set aside)
+e241faa732b2f13d69dc960137e2547658f252178ff1fefa2e5cb3fea565a127
+key: Officers 1167671
+key: Officers 1168154
+key: Officers 1168142
+cf598aa97d3c6ff76d93429c2e2583ad7a3a78b7198d1850e3c6ded39d088af4
+key: Officers 1176315
+63540f8215675a2f06cb634c422e46f0595a1a29a89bdc3ee0c023c1a941e67b
+key: Officers 1224386
+ee8393f456ce5ff003d323d99e70fbcd53559c208b97953a1fdc847b436f1b54
+key: Officers 1322312
+4c8965fab68e60bafebfdca37af36f6bfef6ca1fba6528e14fd1aa995f6e211f
+key: Officers 1324059
+cbc0cb3e7db3ea5a81596c900f0b47b41a579de7a14f6aff88f6e644269bf107
+key: Officers 1756874
+# AnnualReturn: the return of the no-number organisation (set aside) and one naming no organisation and no group
+# (set aside); a tier the code list does not hold (-1); the group member's return; a qualified audit opinion; a
+# return in Australian dollars; a return filed by a group alone
+2a2bf4e48e66540185944c8681b02386925079e46dd6049e4e19c0989136b795
+key: AnnualReturn 167198
+key: AnnualReturn 167205
+38e6be6b2aa9e582ff0b5ef31979d154442f30279e0378300e4839e605aec702
+key: AnnualReturn 175439
+39622b28d68b6aeda486c0f0c242d544259cf4a5e668412ed4817d4bc358c1a1
+key: AnnualReturn 238632
+91799ecfcc84377f0c5683b587a890c8fd9fa33c7fe02a18f8ce1e7888e194b6
+key: AnnualReturn 375930
+537414e5c7d7aa03f7b567c03418e1868a8ce3dd65c4e31b41575f853cb11130
+key: AnnualReturn 395815
+9d009a59d642e174032b6081cee8c8712c737308a2fbd8b2f24bcad02daca59c
+key: AnnualReturn 434560
+# name fields (the Fable build's two findings): a birth date typed as a middle name (the field withheld, the row kept,
+# above: 1168142); a date as the last and full name (both withheld, the name rebuilt from the parts left); an address
+# as a middle name (withheld); a body named "<digits> Limited" (a company's name, kept)
+f3cb8206643472b773f99230c3c3dcf2aa65ed6ac2d88d8ce3c9e5830ccccfa5
+key: Officers 1211942
+56f9399e690ea90db7000ebadb60f0f63bcaeb4bcd6c5840a7b7df694617e2c9
+key: Officers 1277974
+1083767f23796e549bccb60d8ad88a4d6036eec1135ef315c31e2cbe81cd6f8e
+key: Officers 1243695

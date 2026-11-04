@@ -1,0 +1,1917 @@
+# THE JOB CATALOGUE — every `qv4-` job type the scheduler may run, and the
+# rules for sharing the graphics cards (plan step 2.4, "The nine rules").
+#
+# A job declares what it needs (docs/contracts/job.md): `needs` is
+# "model-profile" with a `profile` from profiles.toml, or "processor";
+# `memory_gb` is per parallel worker, MEASURED from run records, never
+# computed; `deadline_s` is longer than its work and shorter than its
+# interval; `query_timeout_s` sits under the deadline so a job killed at its
+# deadline does not leave its query running. `class` is rule 8: "waiting"
+# (someone is waiting), "due" (by a time), "whenever" (bulk).
+# `requires` names the programs the box must have: node1 once lacked the page
+# reader and blanked the totals for 17 days with the board green.
+# A timetable is `every_s` or `at_utc` (HH:MM UTC, one or a list; both
+# clocks hold local time): it lives here, in the queue, not in a timer on
+# one box (step 2.12). `nice` is the child's niceness.
+# `wanted` makes a standing service (step 2.13). `pieces` cuts a job into
+# pieces that each record progress (rule 7); the command then takes the
+# piece key as its last argument.
+#
+# THE CHAIN RUNS ITSELF (31 October, Arthur 08:40: "a pipeline that is
+# continuously gathering, ingesting, OCRing and reading names"). A pieced
+# job may name `pieces_command`, a command list the worker runs in the
+# job's environment when a row is claimed with no pieces listed; it prints
+# one piece key a line and the lines are the row's pieces (none: the row is
+# done at once, "nothing waiting", and holds no card). A job may name
+# `then = ["qv4-x", ...]`: when a row of it finishes, one row of each is
+# queued (class whenever, no pieces) unless one is queued or running already.
+# A pieced row runs `concurrency` pieces AT ONCE, cut to the profile's
+# `streams` (profiles.toml) less the other rows' pieces in flight on the same
+# server; `threads` says how many requests one piece keeps open itself (the
+# hansard reader's --threads), so concurrency x threads <= streams is checked.
+# `concurrency` still caps the ROWS of the type a worker runs at once per
+# card holding the profile, so the server sees at most concurrency x rows
+# pieces of one type, and the runner keeps the sum under `streams`.
+#
+# Hard limit 23: every name carries qv4-. `python -m support.scheduler check`
+# refuses a catalogue that breaks a rule.
+
+version = 1
+
+[queueing]
+slice_seconds = 3600          # rule 2: a job keeps its card for up to an hour while it has work
+drain_not_kill = true         # rule 3
+min_queue_to_evict = 8        # rule 5's floor until the profile's load time is measured
+max_wait_seconds = 1800       # rule 6: a small job gets its card after 30 minutes regardless
+piece_seconds = 300           # rule 7: a piece is a few minutes
+due_horizon_seconds = 7200    # rule 8: a due job goes ahead of bulk work this close to its time
+memory_reserve_gb = 16        # step 2.5: kept for the database and the standing services. 40 until 1 November 2026, when it counted Flash-Next's host pool (31 GB, 30 October); Radiance's memory, the n-gram table in RAM included (~88 GB), is already out of MemAvailable, so the 40 held back what was not there: with 33 GB available nothing new was claimed from 20:31
+lease_seconds = 90            # step 2.8: a running job renews its lease well inside this
+policy = "priority-ordered-round-robin"
+
+# THE STANDING SERVER'S NIGHT WINDOW (ruling 129, 30 October 2026). Flash-Next
+# on Radiance holds both of node2's cards (56.0 GB over the two, measured 30
+# October) and the page reader (4.8 GB) fits on neither beside it: card 0 had
+# 2.3 GB free and card 1 4.2 GB. So between these local hours, when a job on
+# `profile` is queued and no piece of a view on `standing` (text-reader,
+# review) is running or leased, the card manager stops the standing server's
+# unit, waits until the cards no longer hold its model, and loads `profile`
+# on `card` for the queued pieces; the standing server's OTHER card is held
+# reserved meanwhile, so the frozen product's OCR server (querynz-vision-ocr,
+# :8032, 4.7 GB over both cards, never touched) keeps its room. When the page
+# queue is empty, or a text-reader or review piece is due, or the window ends,
+# whichever is first, the manager unloads `profile`, starts the unit again and
+# waits for the model to read back. The OTHER card: since 30 October the page
+# profile loads beside the frozen OCR server there too when the card's free
+# memory, measured after the stop, covers it (cards.py; spec.md on rule 25).
+# Arthur's word moves the hours without a commit: `python -m support.scheduler
+# night open [--until HH:MM]` and `night close` (night.py). Every stop and start is a swap-ledger
+# line with its reason and the measured seconds (Radiance starts in 21.6 s).
+# Outside the window the standing server is never stopped or planned (ruling
+# 121). The frozen release runs at 06:15 NZDT and never calls Flash-Next. The
+# hours are local time in `timezone`, so the clock change moves nothing here.
+[night_window]
+start_local = "22:00"   # ruling 129 (opened from 15:00 on Arthur's word on 30 October for the page backlog; restored 21:20)
+end_local = "05:45"
+timezone = "Pacific/Auckland"
+standing = "flash-next"
+profile = "page-reader"
+card = 1
+
+# Step 2.9: the cards the carve-out holds. The planner never evicts these.
+# Ruling 121 (29 October 2026): the frozen chat model (querynz-agent-llm,
+# :8020) left the carve-out, and qv4-radiance holds both of node2's cards
+# as the standing profile flash-next, which the planner never plans (inside
+# the night window above the card manager, not the planner, takes them for
+# the page reader and gives them back). The frozen OCR server
+# (querynz-vision-ocr, :8032) keeps its room inside Radiance's
+# --gpu-headroom-mib on each card, so no card is reserved here.
+# node1 is out (ruling 55); a reservation for it goes here when it returns.
+
+# ── the founding jobs, on the queue's clock (step 2.12) ─────────────────────
+# Installed by the founding session as systemd timers on node2 (local time,
+# NZDT = UTC+13 until 5 April 2027); here in UTC, with the deadlines the
+# units carried and a query limit under each. The installer supersedes the
+# timers: a `.timer` whose job is timetabled here is disabled, and the clock
+# is handed over so nothing runs twice. When the clocks change, these times
+# move with them or they drift an hour against the old estate's jobs.
+
+[jobs.qv4-checks-board]
+description = "The checks board (plan 1.6): every registered check, the board written, alarms on red. Daily at 07:30 NZDT, after the old release (06:15) and the old board (06:40)."
+needs = "processor"
+memory_gb = 1.0
+deadline_s = 3600
+query_timeout_s = 600
+class = "due"
+priority = 11
+command = ["python", "-m", "checks.board"]
+at_utc = "18:30"
+nice = 10
+
+[jobs.qv4-checks-heartbeat]
+description = "The checks board heartbeat: alarms if the board has not run in 26 hours. Twice daily, 09:00 and 21:00 NZDT."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 300
+query_timeout_s = 60
+class = "due"
+priority = 12
+command = ["python", "-m", "checks.board", "--heartbeat"]
+at_utc = ["20:00", "08:00"]
+
+[jobs.qv4-full-tier]
+description = "The full tier (plan 1b.7): every test, the slow ones included, against the real environment. Nightly at 04:30 NZDT, before the board."
+needs = "processor"
+memory_gb = 6.0
+deadline_s = 7200
+query_timeout_s = 1800
+class = "due"
+priority = 13
+command = ["python", "bin/full-tier"]
+at_utc = "15:30"
+nice = 10
+
+# Track B (offsite-2a, offsite-2b): the copy replaced the step 1.8 dump of
+# querynz_v4 once a copy restored from the bucket to equality (19 October).
+
+[jobs.qv4-offsite-copy]
+description = "The off-site copy (track B, ruling 21): every table and file tree the delete rule keeps, changes nightly and a full checkpoint on Sunday; the press graph frozen (sent when it moves, or every 28 days). Replaces the step 1.8 dump of querynz_v4 once its restore from the bucket is proven. 21:00 NZDT, finished before the old estate's push (01:38) takes the link; a run cut off at its deadline resumes the next night."
+needs = "processor"
+memory_gb = 1.5
+deadline_s = 16200
+query_timeout_s = 7200
+class = "due"
+priority = 14
+command = ["python", "-m", "support.offsite", "copy"]
+requires = ["pg_dump", "gpg", "zstd"]
+at_utc = "08:00"
+nice = 10
+
+[jobs.qv4-offsite-rehearsal]
+description = "The off-site restore rehearsal (track B): the newest copy fetched from the bucket through the read-only key, restored into a scratch server on /mnt/hdd2, every table and file checked equal to the manifest, the time recorded. Every 28 days; the restored copy is removed after."
+needs = "processor"
+memory_gb = 3.0
+deadline_s = 43200
+query_timeout_s = 7200
+class = "whenever"
+priority = 15
+command = ["python", "-m", "support.offsite", "restore"]
+requires = ["pg_restore", "initdb", "gpg", "zstd"]
+every_s = 2419200
+nice = 10
+
+# ── the scheduler's own jobs ─────────────────────────────────────────────────
+
+[jobs.qv4-scheduler-report]
+description = "Writes <live>/checks/scheduler.json: queue depth, workers, cards, the last swaps, for the checks board. The first job on a timetable in the queue (step 2.12)."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 300
+query_timeout_s = 60
+class = "due"
+priority = 10
+command = ["python", "-m", "support.scheduler", "report"]
+every_s = 3600
+
+[jobs.qv4-source-lights]
+description = "Writes <live>/checks/source-lights.json: a light for every register on the board's search pane (Arthur, 4 November 2026), red when its updates are not working (a failed or late run, a host the fetch gate holds), orange when they work but the corpus is not whole (pieces to go, documents waiting on a reader, a short count, a gap declared in checks/source_gaps.toml), green, or grey with no update job. Reads the queue and the timetable on the read login, the gate's refusals, the last pull's run record and two published counts. The board shows the file; older than two hours, every dot is grey."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 300
+query_timeout_s = 60
+class = "due"
+priority = 128   # unique (4 November 2026)
+command = ["python", "-m", "checks.source_lights"]
+every_s = 1800
+
+[jobs.qv4-reread]
+description = "Re-read a set of documents after a reader, a profile or a rule changes (step 2.14): one piece per document, each compared with the reading it would replace before it lands. Queued by a session or a lane, never fired by hand (ruling 45)."
+needs = "model-profile"
+profile = "text-reader"
+memory_gb = 1.5
+deadline_s = 900
+query_timeout_s = 300
+class = "whenever"
+priority = 20
+command = ["python", "-m", "support.scheduler", "reread-piece"]
+requires = ["pdftotext", "pdftoppm"]
+pieces = true
+can_share = true
+concurrency = 2
+
+[jobs.qv4-reread-pages]
+description = "The page-reader half of a re-read: documents whose pages have no usable text layer, through the page-reader profile."
+needs = "model-profile"
+profile = "page-reader"
+memory_gb = 1.5
+deadline_s = 1800
+query_timeout_s = 300
+class = "whenever"
+priority = 21
+command = ["python", "-m", "support.scheduler", "reread-piece", "--pixels"]
+requires = ["pdftoppm"]
+pieces = true
+can_share = false
+concurrency = 1
+
+[jobs.qv4-read-pages]
+description = "Every image page of one document through the page-reader profile, stored under the reader contract's stamp and the profile named in the command (qv4-reread-pages reads one page per document). One piece per document; the lane that set the document aside at stage `read` picks the readings up on its next load. Queued by the integrator after a merge."
+needs = "model-profile"
+profile = "page-reader"
+memory_gb = 1.5
+deadline_s = 1800
+query_timeout_s = 300
+class = "whenever"
+priority = 23
+command = ["python", "-m", "support.scheduler", "read-pages", "--profile", "ec-party-return-text"]
+requires = ["pdftoppm"]
+pieces = true
+can_share = false
+concurrency = 1
+
+[jobs.qv4-read-pages-expenses]
+description = "qv4-read-pages for the party-finance lane: every image page of one party expense return under the profile ec-party-expenses-return, on the card the worker holds. One piece per document; the lane picks the readings up on its next load. Queued by the integrator after a merge."
+needs = "model-profile"
+profile = "page-reader"
+memory_gb = 1.5
+deadline_s = 1800
+query_timeout_s = 300
+class = "whenever"
+priority = 24
+command = ["python", "-m", "support.scheduler", "read-pages", "--profile", "ec-party-expenses-return"]
+requires = ["pdftoppm"]
+pieces = true
+can_share = false
+concurrency = 1
+
+[jobs.qv4-charities-capture]
+description = "Step 4.1: the Charities Register's open data feed, verbatim pages of 1,000 by key through the fetch gate; a full copy, then changes by ModifiedOn, a full copy again every 28 days. Nightly at 23:30 NZDT, at most 4 hours."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 18000
+query_timeout_s = 60
+class = "due"
+priority = 34
+command = ["python", "-m", "registers.charities.capture", "--budget-s", "14400"]
+at_utc = "10:30"
+nice = 10
+
+# ── the Gazette's notices after the 20 October export, from DigitalNZ (2 November 2026, Arthur: "fix the gazette notices and
+# appointments gathering & ingestion"); the Gazette's own pages answer with a challenge, so they are never asked ──
+[jobs.qv4-gazette-capture]
+description = "The Gazette: DigitalNZ's records of every Gazette notice not held, through the fetch gate, one request at a time 5 s apart, off-peak; newest first until a page holds nothing new, then each year short of DigitalNZ's count walked back. Each answer landed once by hash; the Gazette's robots file read first for the notices it suppresses (unreadable: no night). At most 400 requests a night. Nightly at 23:40 NZDT."
+needs = "processor"
+memory_gb = 0.5   # 2 November 2026: the export's notice numbers in a set; the trial (20 requests) ran well under it
+deadline_s = 4200
+query_timeout_s = 60
+class = "due"
+priority = 124
+command = ["python", "-m", "registers.gazette.capture", "--night", "--requests", "400", "--budget-s", "3300"]
+at_utc = "10:40"
+nice = 10
+then = ["qv4-gazette-load"]
+
+[jobs.qv4-gazette-load]
+description = "The Gazette: the 20 October export and every landed DigitalNZ answer read by the lane's readers into staging_gazette_load, checked against the Gazette's own counts (registers.gazette.check), and published (pub.gazette_*) only on green. Queued by each qv4-gazette-capture (its `then`); no clock of its own."
+needs = "processor"
+memory_gb = 5.5   # measured 2 November 2026: 4.75 GB peak resident, 2 min 20 s, for 207,433 notices
+deadline_s = 1800
+query_timeout_s = 900
+class = "due"
+priority = 125
+command = ["python", "-m", "registers.gazette.load", "--job"]
+nice = 10
+then = ["qv4-scan-rerun"]   # society-officers-liquidations reads pub.gazette_liquidations (2 November 2026)
+
+# ── step 4.1, incorporated-society officers (the NZBN register's entity detail) ──
+# One ask per society, 5 s apart, party societies first, then the stalest
+# seventh (about 3,300 a night, about 4.6 hours). The lane checks off-peak
+# itself: 01:00 to 06:00 NZ time, never the API's Wednesday 21:00 to 23:00
+# maintenance window. A 403, 429, 5xx or challenge stops the night (exit 1).
+[jobs.qv4-societies-capture]
+description = "Step 4.1: incorporated-society officers, the NZBN API's entity detail, one gated ask per society with our own key, party societies first then the stalest seventh. Nightly at 01:00 NZDT, at most 4h50."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 18000
+query_timeout_s = 60
+class = "due"
+priority = 35
+command = ["python", "-m", "registers.societies.capture", "--night", "--budget-s", "17400"]
+at_utc = "12:00"
+nice = 10
+
+# ── step 4.2, the links (links-1) ──────────────────────────────────────────
+[jobs.qv4-links-build]
+description = "Step 4.2: rebuild the links from the published registers: rows under the shared reading, the two confirming rules, the number links, groups, the watch, the test pairs and the six measurements. After each lane load; register rule 10 (rebuild what changed) is the next tranche."
+needs = "processor"
+memory_gb = 6.5   # measured 4 November 2026: 5,668,740 kB peak resident in the full scratch build with the LINZ owners and the ruling-142 rules (1,939,836 kB on 3 November without them)
+deadline_s = 10800   # measured 4 November 2026: 6,348 s wall for the full build under the courts load's and the sightings' writes (rows 3,247 s, of them the LINZ owners 1,740 s, read again only after a LINZ load; links 1,831 s; groups 205 s; entities 199 s; measurements 748 s). Row 1439 stopped at 7,200 s on 4 November in the model check of parliament_people, since bulk-read (e998079)
+query_timeout_s = 3600
+class = "due"
+priority = 36
+command = ["python", "-m", "links.build_all"]
+at_utc = "18:45"   # 07:45 NZDT, after the night's loads (courts 04:40, sanctions 06:35); it had no trigger and last ran 1 November (3 November 2026)
+nice = 10
+then = ["qv4-sightings-forms", "qv4-scan-rerun"]   # the forms follow pub.names (31 October 23:55); the stale scans re-run on the new links (2 November 2026: the procurement read-back red)
+
+[jobs.qv4-links-review]
+description = "Track C: the review agent reads test pairs (mode score) or watched confirmed links (mode watched, the default) through the review profile and records its verdicts in links.readings; applies nothing while the switch is off."
+needs = "model-profile"
+profile = "review"
+memory_gb = 0.5
+deadline_s = 7200
+query_timeout_s = 120
+class = "whenever"
+priority = 60
+command = ["python", "-m", "links.review", "--job"]
+can_share = true
+
+# ── step 4.4, the Follow the Money version folder (site-1); the job's class is due, daily at 08:00 NZDT ──
+[jobs.qv4-site-build]
+description = "Step 4.4: build the Follow the Money version folder from the pub views and the template, pinned to the newest frozen release listing; the gates run; nothing is deployed and nothing flipped. Daily after the frozen release's listing is written (the watcher lists it at the board's run), so the comparison in checks/ reads the two sides from the same inputs."
+needs = "processor"
+memory_gb = 1
+deadline_s = 1800
+query_timeout_s = 120
+class = "due"
+priority = 51
+command = ["python", "-m", "products.published_site", "build"]
+at_utc = "19:00"
+nice = 10
+
+[jobs.qv4-disclosures-read]
+description = "The disclosures lane's page readings (step 4.1): one piece per scanned large-donation declaration with no stored reading, every page as an image through the page-reader profile; the lane's next load picks the readings up. Queued by the integrator after a merge, then on the lane's rebuild for a scan with no reading."
+needs = "model-profile"
+profile = "page-reader"
+memory_gb = 1.5
+deadline_s = 1800
+query_timeout_s = 300
+class = "whenever"
+priority = 22
+command = ["python", "-m", "registers.disclosures.read", "--scan"]
+requires = ["pdftoppm"]
+pieces = true
+can_share = false
+concurrency = 1
+
+[jobs.qv4-embed]
+description = "Bulk embedding for search through the embedding profile: one piece per document, the vectors stored as a reading in the reader store (ruling 50). One search query embeds on the processor and needs no card."
+needs = "model-profile"
+profile = "embedding"
+memory_gb = 1.0
+deadline_s = 1800
+query_timeout_s = 600
+class = "whenever"
+priority = 30
+command = ["python", "-m", "support.scheduler", "embed-piece"]
+requires = ["pdftotext"]
+pieces = true
+can_share = true
+concurrency = 4
+
+[jobs.qv4-questions]
+description = "Holds the review-and-questions profile on one card while a product is served (ruling 22's default: no card kept empty; part of the slots kept for live questions). Standing; enabled when a product is served."
+needs = "model-profile"
+profile = "review"
+memory_gb = 0.5
+deadline_s = 86400
+query_timeout_s = 30
+class = "waiting"
+priority = 5
+command = ["python", "-m", "support.scheduler", "hold-profile"]
+wanted = 1
+can_share = true
+enabled = false
+
+# ── rehearsal jobs ───────────────────────────────────────────────────────────
+# Cheap jobs that prove the machinery on a real box (step 2's done-when list,
+# proven with two workers on node2 under the queue's default). They run only
+# when queued; nothing queues them but a session or a test.
+
+[jobs.qv4-rehearsal-sleep]
+description = "Sleeps a few seconds on the processor. Proves claim, lease, run record, completion."
+needs = "processor"
+memory_gb = 0.2
+deadline_s = 120
+query_timeout_s = 30
+class = "whenever"
+priority = 90
+command = ["python", "-m", "support.scheduler", "rehearse", "sleep", "--seconds", "3"]
+concurrency = 2
+
+[jobs.qv4-rehearsal-pieces]
+description = "Ten pieces of a few seconds each. Proves pieces, progress, and that a stopped worker loses at most one piece while the other finishes."
+needs = "processor"
+memory_gb = 0.2
+deadline_s = 120
+query_timeout_s = 30
+class = "whenever"
+priority = 91
+command = ["python", "-m", "support.scheduler", "rehearse", "sleep", "--seconds", "4"]
+pieces = true
+
+[jobs.qv4-rehearsal-burn]
+description = "Allocates more memory than it declares. Proves the ceiling: the job is stopped, the box is not, the peak is recorded and flagged."
+needs = "processor"
+memory_gb = 0.1
+deadline_s = 120
+query_timeout_s = 30
+class = "whenever"
+priority = 92
+command = ["python", "-m", "support.scheduler", "rehearse", "burn", "--mb", "600", "--seconds", "30"]
+
+[jobs.qv4-rehearsal-needs-program]
+description = "Requires the headed browser. Proves a job needing a program only one box has is never given to the other (the second worker hides it)."
+needs = "processor"
+memory_gb = 0.2
+deadline_s = 120
+query_timeout_s = 30
+class = "whenever"
+priority = 93
+command = ["python", "-m", "support.scheduler", "rehearse", "sleep", "--seconds", "2"]
+requires = ["google-chrome"]
+
+[jobs.qv4-rehearsal-tick]
+description = "A two-minute timetable for the rehearsal: proves a timetabled job runs on the surviving worker with no hand step. Disabled when not rehearsing."
+needs = "processor"
+memory_gb = 0.2
+deadline_s = 100
+query_timeout_s = 30
+class = "due"
+priority = 94
+command = ["python", "-m", "support.scheduler", "rehearse", "sleep", "--seconds", "1"]
+every_s = 120
+enabled = false
+
+[jobs.qv4-rehearsal-text-reader]
+description = "One real call through the text-reader profile. Proves a swap for a real job and that the card answers with the model the profile names."
+needs = "model-profile"
+profile = "text-reader"
+memory_gb = 0.2
+deadline_s = 300
+query_timeout_s = 30
+class = "whenever"
+priority = 95
+command = ["python", "-m", "support.scheduler", "rehearse", "model"]
+can_share = true
+
+[jobs.qv4-rehearsal-bench]
+description = "Eight synthetic page-sized requests (4,000 tokens each, unique) at once through the text-reader profile and the model client: prompt and completion tokens a second through the worker's own path (ruling 121). Reads no document."
+needs = "model-profile"
+profile = "text-reader"
+memory_gb = 0.3
+deadline_s = 900
+query_timeout_s = 30
+class = "whenever"
+priority = 89
+command = ["python", "-m", "support.scheduler", "rehearse", "bench", "--streams", "8", "--prompt-tokens", "4000"]
+can_share = true
+
+[jobs.qv4-rehearsal-review]
+description = "One real call through the review-and-questions profile."
+needs = "model-profile"
+profile = "review"
+memory_gb = 0.2
+deadline_s = 300
+query_timeout_s = 30
+class = "whenever"
+priority = 96
+command = ["python", "-m", "support.scheduler", "rehearse", "model"]
+can_share = true
+
+[jobs.qv4-rehearsal-embedding]
+description = "The embedding profile loads and advertises bge-m3 (read back from the card)."
+needs = "model-profile"
+profile = "embedding"
+memory_gb = 0.2
+deadline_s = 300
+query_timeout_s = 30
+class = "whenever"
+priority = 97
+command = ["python", "-m", "support.scheduler", "rehearse", "served"]
+can_share = true
+
+[jobs.qv4-rehearsal-page-reader]
+description = "One scanned page through the page-reader profile on a card that is not reserved (args: sha256)."
+needs = "model-profile"
+profile = "page-reader"
+memory_gb = 0.5
+deadline_s = 600
+query_timeout_s = 30
+class = "whenever"
+priority = 98
+command = ["python", "-m", "support.scheduler", "rehearse", "page"]
+requires = ["pdftoppm"]
+
+# THE TRIAL'S JOB TYPES (plan steps 3.5 to 3.7), appended to
+# support/scheduler/jobs.toml by the integrator (the merge request carries
+# the patch). One bulk job type per reader, cut into pieces of one document
+# each (rule 7: a worker stopped mid-run loses at most one piece); a small
+# `waiting`-class job to inject part-way (3.6: a small job never waits for
+# ever); and the text-reader pass that turns each reader's page text into
+# rows for scoring (3.7). memory_gb is per piece, the child process only
+# (the model server is the card manager's). Priorities 40 to 52 are the
+# trial's; the pass-one job (GLM-OCR) goes first.
+
+[jobs.qv4-trial-read-glm-ocr]
+description = "Step 3: one page-set document, every selected page rendered and read by the incumbent GLM-OCR (profile page-reader); pass one reproduces the old estate's readings by hash and page."
+needs = "model-profile"
+profile = "page-reader"
+memory_gb = 1.5
+deadline_s = 3600
+query_timeout_s = 60
+class = "whenever"
+priority = 40
+command = ["python", "-m", "support.trials", "piece"]
+requires = ["pdftoppm"]
+pieces = true
+can_share = false
+concurrency = 1
+
+[jobs.qv4-trial-read-glm-ocr-f16]
+description = "Step 3: the incumbent at f16 (the compression comparison, 3.1)."
+needs = "model-profile"
+profile = "trial-glm-ocr-f16"
+memory_gb = 1.5
+deadline_s = 3600
+query_timeout_s = 60
+class = "whenever"
+priority = 41
+command = ["python", "-m", "support.trials", "piece"]
+requires = ["pdftoppm"]
+pieces = true
+can_share = false
+concurrency = 1
+
+[jobs.qv4-trial-read-teleocr]
+description = "Step 3 challenger: TeleOCR. Requires the patched model server build (the conversion's PATCHES.md); never claimed on a box without it."
+needs = "model-profile"
+profile = "trial-teleocr"
+memory_gb = 1.5
+deadline_s = 3600
+query_timeout_s = 60
+class = "whenever"
+priority = 42
+command = ["python", "-m", "support.trials", "piece"]
+requires = ["pdftoppm", "qv4-llama-server-teleocr"]
+pieces = true
+can_share = false
+concurrency = 1
+
+[jobs.qv4-trial-read-teleocr-f16]
+description = "Step 3: TeleOCR at f16 (the compression comparison)."
+needs = "model-profile"
+profile = "trial-teleocr-f16"
+memory_gb = 1.5
+deadline_s = 3600
+query_timeout_s = 60
+class = "whenever"
+priority = 43
+command = ["python", "-m", "support.trials", "piece"]
+requires = ["pdftoppm", "qv4-llama-server-teleocr"]
+pieces = true
+can_share = false
+concurrency = 1
+
+[jobs.qv4-trial-read-ovisocr2]
+description = "Step 3 challenger: OvisOCR2."
+needs = "model-profile"
+profile = "trial-ovisocr2"
+memory_gb = 1.5
+deadline_s = 3600
+query_timeout_s = 60
+class = "whenever"
+priority = 44
+command = ["python", "-m", "support.trials", "piece"]
+requires = ["pdftoppm"]
+pieces = true
+can_share = false
+concurrency = 1
+
+[jobs.qv4-trial-read-ovisocr2-f16]
+description = "Step 3: OvisOCR2 at f16 (the compression comparison)."
+needs = "model-profile"
+profile = "trial-ovisocr2-f16"
+memory_gb = 1.5
+deadline_s = 3600
+query_timeout_s = 60
+class = "whenever"
+priority = 45
+command = ["python", "-m", "support.trials", "piece"]
+requires = ["pdftoppm"]
+pieces = true
+can_share = false
+concurrency = 1
+
+[jobs.qv4-trial-read-chandra]
+description = "Step 3 challenger: Chandra OCR 2 at Q8_0."
+needs = "model-profile"
+profile = "trial-chandra"
+memory_gb = 1.5
+deadline_s = 3600
+query_timeout_s = 60
+class = "whenever"
+priority = 46
+command = ["python", "-m", "support.trials", "piece"]
+requires = ["pdftoppm"]
+pieces = true
+can_share = false
+concurrency = 1
+
+[jobs.qv4-trial-read-chandra-q4]
+description = "Step 3: Chandra OCR 2 at Q4_K_M (the compression comparison)."
+needs = "model-profile"
+profile = "trial-chandra-q4"
+memory_gb = 1.5
+deadline_s = 3600
+query_timeout_s = 60
+class = "whenever"
+priority = 47
+command = ["python", "-m", "support.trials", "piece"]
+requires = ["pdftoppm"]
+pieces = true
+can_share = false
+concurrency = 1
+
+[jobs.qv4-trial-read-infinity]
+description = "Step 3 challenger: Infinity-Parser2-Pro (35B mixture) at Q4_K_M. The large one the small jobs must not starve behind (rules 5 and 6)."
+needs = "model-profile"
+profile = "trial-infinity-q4"
+memory_gb = 1.5
+deadline_s = 7200
+query_timeout_s = 60
+class = "whenever"
+priority = 48
+command = ["python", "-m", "support.trials", "piece"]
+requires = ["pdftoppm"]
+pieces = true
+can_share = false
+concurrency = 1
+
+[jobs.qv4-trial-read-infinity-q8]
+description = "Step 3: Infinity-Parser2-Pro at the hub's Q8_0 with the experts on the processor (the compression comparison, twenty pages only)."
+needs = "model-profile"
+profile = "trial-infinity-q8"
+memory_gb = 1.5
+deadline_s = 7200
+query_timeout_s = 60
+class = "whenever"
+priority = 49
+command = ["python", "-m", "support.trials", "piece"]
+requires = ["pdftoppm"]
+pieces = true
+can_share = false
+concurrency = 1
+
+[jobs.qv4-trial-urgent-page]
+description = "Step 3.6: one page through the incumbent, class waiting, injected part-way through the bulk passes to show a small job never waits for ever (piece key sha256:page)."
+needs = "model-profile"
+profile = "page-reader"
+memory_gb = 1.0
+deadline_s = 600
+query_timeout_s = 30
+class = "waiting"
+priority = 6
+command = ["python", "-m", "support.trials", "urgent"]
+requires = ["pdftoppm"]
+pieces = true
+can_share = false
+concurrency = 1
+
+[jobs.qv4-trial-rows]
+description = "Step 3.7: one document's stored page readings, from every reader, turned into rows by the text reader under the text-reader profile (the same for every page reader), stored beside the readings for scoring (piece key sha256)."
+needs = "model-profile"
+profile = "text-reader"
+memory_gb = 1.5
+deadline_s = 3600
+query_timeout_s = 120
+class = "whenever"
+priority = 50
+command = ["python", "-m", "support.trials", "rows"]
+pieces = true
+can_share = true
+concurrency = 2
+
+# ── track E, the windowed sources (capture and hold; read in step 5) ─────────
+# Added by the integrator at the merge of windowed-1 (card
+# windowed-capture-jobs-into-the-catalogue). Each night spends at most its
+# budget, five seconds between requests, one at a time, and stops at 06:00 NZ
+# time whatever is left (the lane checks off-peak itself). memory_gb is a
+# ceiling until the first run record measures it. The clocks are NZDT
+# (UTC+13) until 5 April 2027; move them with the founding jobs.
+
+[jobs.qv4-tenancy-tribunal-capture]
+description = "Track E: the Tenancy Tribunal's published orders (public for three years, then taken down), through the fetch gate, soonest to leave first, each fetched once. Nightly at 22:30 NZDT, at most 4.5 hours."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 21600
+query_timeout_s = 60
+class = "due"
+priority = 33
+command = ["python", "-m", "registers.tenancy_tribunal.capture", "--budget-s", "16200"]
+at_utc = "09:30"
+nice = 10
+
+[jobs.qv4-real-estate-authority-capture]
+description = "Track E: the Real Estate Authority's decisions database (Committee decisions leave after three years), through the fetch gate, the Committee's oldest first, each page fetched once. Nightly at 23:00 NZDT, at most 4 hours."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 18000
+query_timeout_s = 60
+class = "due"
+priority = 31
+command = ["python", "-m", "registers.real_estate_authority.capture", "--budget-s", "14400"]
+at_utc = "10:00"
+nice = 10
+
+[jobs.qv4-real-estate-authority-load]
+description = "Step 5.3 (Arthur, 2 November 2026: \"alright do it\"): every landed abstract read deterministically into pub.rea_decisions and pub.rea_parties, built in staging, checked (every abstract read or set aside, at most 1% aside, no name on a suppressed decision), published only on green. Daily at 06:35 NZDT, after the night's capture."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 900
+query_timeout_s = 600
+class = "due"
+priority = 126   # unique; a daily load after its capture
+command = ["python", "-m", "registers.real_estate_authority.load", "--job"]
+at_utc = "17:35"
+nice = 10
+
+[jobs.qv4-read-pages-candidates]
+description = "Every image page of one candidate return through the page-reader profile, stored under the reader contract's stamp and the candidate-returns lane's scan profile (card: 713 returns set aside at stage read wait on a reading). One piece per document; the lane picks the readings up on its next load. Queued by the integrator after candidate-returns-1."
+needs = "model-profile"
+profile = "page-reader"
+memory_gb = 4   # the scheduler report of 31 October: raise 2, peak 1,931 MB over the 1.5 GB ceiling on row 860
+deadline_s = 1800
+query_timeout_s = 300
+class = "whenever"
+priority = 25
+command = ["python", "-m", "support.scheduler", "read-pages", "--profile", "ec-candidate-return-scan"]
+requires = ["pdftoppm"]
+pieces = true
+can_share = false
+concurrency = 3   # rows side by side on EACH page reader's three slots (30 October): the worker's cap is per card holding the profile
+
+[jobs.qv4-site-compare]
+description = "Step 4.5: pair today's frozen release with the rebuilt version built from its listing, read every published file of the ten kinds on both sides figure by figure (no tolerance on money), group every difference by its cause, and write the day record and the clean-day ledger under <live>/checks/comparison/. Exits 1 when a difference has no cause card, or when no rebuilt version exists for today's listing. After qv4-site-build."
+needs = "processor"
+memory_gb = 1
+deadline_s = 900
+query_timeout_s = 60
+class = "due"
+priority = 52
+command = ["python", "-m", "checks.comparison", "run"]
+at_utc = "19:45"
+nice = 10
+
+# ── step 5.5, company monitoring (the NZBN register's entity detail, one entity at a time) ──
+# Waiting requests first, then due watches; one gated call each, at least 5 s
+# apart, at most 300 a New Zealand day (the interface states no limit; ours).
+# Off-peak 22:00 to 01:00 NZ time, before qv4-societies-capture asks the same
+# host at 01:00, never Wednesday 21:00 to 23:00 (maintenance). A 403, 429,
+# 5xx or challenge stops the night (exit 1). The clock is NZDT (UTC+13) until
+# 5 April 2027; move it with the founding jobs.
+[jobs.qv4-companies-monitor]
+description = "Step 5.5: company monitoring. Each product request, then each due watch, checked against the NZBN register's entity detail through the fetch gate with our own key; the answer landed by hash and every difference stored as a dated change. Nightly at 23:30 NZDT, at most 25 minutes."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 2400
+query_timeout_s = 60
+class = "due"
+priority = 37
+command = ["python", "-m", "registers.companies.monitor", "--night", "--budget-s", "1500"]
+at_utc = "10:30"
+nice = 10
+
+[jobs.qv4-companies-history]
+description = "Companies: the history backfill (Arthur, 1 November 2026). The NZBN register's entity detail for each wanted entity in rank order (removed companies the Gazette names in a liquidation notice first, then other removals since 2019, then registered companies), one gated call at least 5 s apart, off-peak 22:00 to 01:00 NZDT, at most 2,000 calls a day; each answer landed by hash and read into the lookup tables, its roles with the register's own start and end dates. Stops at a failed read."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 11400
+query_timeout_s = 300
+class = "due"
+priority = 200   # unique; after every other job (1 November 2026)
+command = ["python", "-m", "registers.companies.monitor", "--history", "--budget-s", "10500"]
+at_utc = ["09:05", "17:02"]   # 22:05 and 06:02 NZDT: the two windows of history_off_peak (accelerated 2 November 2026)
+nice = 10
+
+# ── charities (the register's own OData feed; the copy lands in the document store by hash and the lane reads it) ──
+[jobs.qv4-charities-load]
+description = "Charities: read the latest OData copy of the register (organisations, officers, annual returns) from the document store into the lane's tables and publish pub.charities, pub.charity_officers and pub.charity_returns; addresses to charities_private; the register's own count checked. Nightly at 06:30 NZDT after the capture."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 1800
+query_timeout_s = 600
+class = "due"
+priority = 38
+command = ["python", "-m", "registers.charities.load", "--job"]
+at_utc = "17:30"
+then = ["qv4-scan-rerun", "qv4-names-charities"]   # the stale scan lines re-run (31 October); its names into pub.names (1 November)
+nice = 10
+# ── party boards, the declared tier (ruling 72): read from the held party-website capture, no fetch; a reload when the lane changes ──
+
+[jobs.qv4-party-boards-load]
+description = "Party boards (ruling 72): read the held party-website capture by its profile into one row per declared board role and publish pub.party_board_roles and pub.party_board_pages; nothing on the site and nothing into the links. No schedule: queued when the lane or its profile changes."
+needs = "processor"
+memory_gb = 1
+deadline_s = 1800
+query_timeout_s = 300
+class = "whenever"
+priority = 39
+command = ["python", "-m", "registers.party_boards.load", "--job"]
+nice = 10
+then = ["qv4-names-party-boards"]   # its names into pub.names (1 November)
+
+# ── step 5.4, the senior courts (courts-2; rulings 126, 127, 128) ──
+[jobs.qv4-courts-load]
+description = "Courts: rebuild the lane's tables from the MCP's courts corpus (every record a documents row: read, waiting on a reader, set aside or caught), replay the stored text-reader readings, publish pub.court_people and the rest on a green check. Nightly at 04:40 NZDT, after the pull."
+needs = "processor"
+memory_gb = 3.0   # unmeasured: the beehive load's figure; measure on the first night
+deadline_s = 10800   # 71 min on 4 November (22,402 records, 15:56 and 18:14); stopped at 5400 s on 5 November (row 1606, 26,285 records after the 01:00 pull); 29 min alone (3 November 07:57); a 50 min scratch build on 4 November (18,448 records, pdftotext the cost, load average 7-11); 30 min was overrun at 10:02 beside the Papers Past index
+query_timeout_s = 600
+class = "due"
+priority = 32   # 85 was taken (integrator); the retired capture job's slot
+command = ["python", "-m", "registers.courts.load", "--publish"]
+at_utc = "15:40"
+nice = 10
+# the load's readers follow it with no hand on them (31 October); qv4-courts-pages joins this list when the courts
+# lane prints its page-reader waits (`python -m registers.courts.read --pages --pieces`, named in fix-support-scheduler-6)
+then = ["qv4-names-courts"]   # its names into pub.names (1 November)
+
+[jobs.qv4-courts-read]
+description = "Courts: the text reader's reading of one document (piece key sha256) through the text-reader profile: every person and body named with its role, counsel for each party, a one-line summary; stored by hash, replayed by the next load. Keys from python -m registers.courts.model_read --pieces."
+needs = "model-profile"
+profile = "text-reader"
+memory_gb = 0.5
+deadline_s = 900
+query_timeout_s = 300
+class = "whenever"
+priority = 26   # 22 was taken (integrator)
+command = ["python", "-m", "registers.courts.model_read", "--piece"]
+pieces_command = ["python", "-m", "registers.courts.model_read", "--pieces"]
+pieces = true
+can_share = true
+concurrency = 8   # pieces in flight on one row (31 October; the text-reader profile's 8 streams); was 4 rows of serial pieces
+
+[jobs.qv4-courts-pages]
+description = "Courts: the page reader over one document with no text layer (piece key sha256), every page as an image through the page-reader profile; the next load reads the stored pages."
+needs = "model-profile"
+profile = "page-reader"
+memory_gb = 1.5
+deadline_s = 1800
+query_timeout_s = 300
+class = "whenever"
+priority = 27   # 22 was taken (integrator)
+command = ["python", "-m", "registers.courts.read", "--pages"]
+requires = ["pdftoppm"]
+pieces = true
+can_share = false
+concurrency = 1
+
+# ── step 5.3, limited partnerships and the Building Practitioners Board's decisions (sanctions-1; card the-partnerships-and-board-decisions-jobs-into-the-catalogue) ──
+# The sanctions lists' two jobs follow the Board's (ruling 132 lifted their hold).
+[jobs.qv4-limited-partnerships-capture]
+description = "Step 5.3: one NZBN entity-detail call per registered limited partnership in pub.companies, through the fetch gate with our key, 5 s apart, at most 600 a night, the stalest first; the capture itself skips Wednesday (the interface's maintenance window). Nightly at 21:00 NZDT, at most 55 minutes."
+needs = "processor"
+memory_gb = 0.2
+deadline_s = 4200
+query_timeout_s = 60
+class = "due"
+priority = 53
+command = ["python", "-m", "registers.limited_partnerships.capture", "--night"]
+at_utc = "08:00"
+nice = 10
+
+[jobs.qv4-limited-partnerships-load]
+description = "Step 5.3: nothing when the listing is the one published, else the limited partnerships and their general partners built in staging, checked, published only on green. Nightly at 06:50 NZDT."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 900
+query_timeout_s = 600
+class = "due"
+priority = 54
+command = ["python", "-m", "registers.limited_partnerships.load", "--job"]
+at_utc = "17:50"
+nice = 10
+then = ["qv4-names-limited-partnerships"]   # its names into pub.names (1 November)
+
+[jobs.qv4-building-practitioners-capture]
+description = "Step 5.3: the Building Practitioners Board's published decisions list (about 80 pages) and its documents, through the fetch gate 5 s apart, each fetched once. The spec asks for Sunday 23:00 NZDT weekly; the catalogue has no weekday, so it runs nightly at 23:00 NZDT (about 7 minutes) until the lane or the scheduler carries the day."
+needs = "processor"
+memory_gb = 0.2
+deadline_s = 2700
+query_timeout_s = 60
+class = "due"
+priority = 55
+command = ["python", "-m", "registers.building_practitioners.capture"]
+at_utc = "10:00"
+nice = 10
+
+[jobs.qv4-building-practitioners-register-capture]
+description = "Step 5.3, ruling 132: the register of licensed building practitioners through its own public search, the fetch gate 5 s apart, off-peak: its 26 searches (7 licence classes, 19 areas of practice) weekly, then each listed practitioner's page once and again after 90 days, up to about 4,000 a night until all are held. Stops at 06:00 NZDT (off-peak's end) or on a block."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 28800
+query_timeout_s = 60
+class = "due"
+priority = 151
+command = ["python", "-m", "registers.building_practitioners.register"]
+at_utc = "09:05"
+nice = 10
+
+[jobs.qv4-building-practitioners-load]
+description = "Step 5.3: the Board's decisions from the newest finished pass and the register's practitioners from its newest pass of searches and every practitioner's page held, built in staging, checked, published only on green. Nightly at 06:40 NZDT (the spec says Monday; see the capture)."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 1800
+query_timeout_s = 600
+class = "due"
+priority = 56
+command = ["python", "-m", "registers.building_practitioners.load", "--job"]
+at_utc = "17:40"
+nice = 10
+then = ["qv4-names-building-practitioners"]   # its names into pub.names (1 November)
+
+# ── step 5.3, the sanctions lists (ruling 132, 2 November 2026: "copy: ... the sanctions lists"). The catalogue has
+# no weekday, so the capture runs nightly and keeps the weekly cadence itself: a list asked within 6.5 days is not
+# asked again; MFAT's workbook only when its page names a new day, Police's only when its page links a new file.
+# 23:30 NZDT is 22:30 NZST, so the capture's own off-peak test (22:00 to 06:00) holds all year. ──
+[jobs.qv4-sanctions-capture]
+description = "Step 5.3 (ruling 132): the three sanctions lists (MFAT's Russia Sanctions Register, the UN Security Council consolidated list, the Police designated terrorist entities workbook and its 1373 page) through the fetch gate, one request at a time, 10 s apart, off-peak, each list weekly, nothing fetched twice (about ten requests a week). A challenge or a bot wall is a failed read of that list, set aside, never got around (hard limit 6); the next list is asked. Nightly at 23:30 NZDT."
+needs = "processor"
+memory_gb = 0.2
+deadline_s = 1200
+query_timeout_s = 60
+class = "due"
+priority = 141
+command = ["python", "-m", "registers.sanctions.capture"]
+at_utc = "10:30"
+nice = 10
+
+[jobs.qv4-sanctions-load]
+description = "Step 5.3 (ruling 132): nothing when the newest landed list documents are the ones published, else the three lists read in staging, checked, published only on green. Nightly at 06:35 NZDT."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 900
+query_timeout_s = 600
+class = "due"
+priority = 142
+command = ["python", "-m", "registers.sanctions.load", "--job"]
+at_utc = "17:35"
+nice = 10
+
+# ── step 6.1, the register scan's re-run (scan-1; card the-scan-rerun-job-into-the-catalogue). It runs after the
+# links' build, which runs after each lane load, so a scan is re-run once the views it read have loaded; the runner
+# decides which scans are stale and re-runs only those (and never-run ones). The catalogue carries no per-job
+# environment: the product's defaults are querynz_v4/register_scan and a ten-minute statement limit. ──
+[jobs.qv4-scan-rerun]
+description = "Step 6.1: re-run every register scan a published view has loaded since (the stale rule: each run records max(loaded_at) of every view it read). After the links' build; one query per scan under a ten-minute statement limit; the run cut at an hour."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 3600
+query_timeout_s = 600
+class = "whenever"
+priority = 59
+command = ["python", "-m", "products.scan", "run", "--stale"]
+nice = 10
+
+# ── registers/tenders: the GETS award notices (step 6.2, template 1; tenders-1, card the-tenders-jobs-into-the-catalogue) ──
+[jobs.qv4-tenders-refresh]
+description = "The ministry's GETS award-notice files through the fetch gate, each current file once a quarter. Asks nothing until a set was last acquired 80 days ago, or within a week of a block; off-peak, 10 s apart; stops and goes red at a block (card the-ministry-s-gets-files-answer-403)."
+needs = "processor"
+memory_gb = 0.2
+deadline_s = 1200
+query_timeout_s = 60
+class = "due"
+priority = 57
+command = ["python", "-m", "registers.tenders.capture", "--refresh"]
+at_utc = "10:00"
+nice = 10
+
+[jobs.qv4-tenders-load]
+description = "The award notices read from the listed files into staging, checked against the files' own counts, published only on green; nothing when the listing is the one published."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 1800
+query_timeout_s = 600
+class = "due"
+priority = 58
+command = ["python", "-m", "registers.tenders.load", "--job"]
+at_utc = "17:30"
+then = ["qv4-scan-rerun", "qv4-names-tenders"]   # the stale scan lines re-run (31 October); its names into pub.names (1 November)
+nice = 10
+
+[jobs.qv4-tenders-listing-load]
+description = "The GETS listing as the ingest MCP serves it: every record of the gets corpus the pull holds read again into tenders.listing (every field and the page's stable labels in columns, the regions read from their label) and tenders_private.listing, in one transaction; red when a record carries a field the reading has no column for (rulings 96, 138, 142). Daily at 04:40 NZDT, after the 01:00 pull."
+needs = "processor"
+memory_gb = 1.0   # measured 200 MB peak on the 13,509 documents of 4 November
+deadline_s = 1800
+query_timeout_s = 600
+class = "due"
+priority = 129
+command = ["python", "-m", "registers.tenders.listing", "--job"]
+at_utc = "15:40"
+nice = 10
+
+# ── step 5.3, the regulator actions (regulators-1; card the-regulator-lanes-jobs-into-the-catalogue). The clock is NZDT (UTC+13) until 5 April 2027. ──
+
+[jobs.qv4-commerce-commission-capture]
+description = "Step 5.3: the Commerce Commission's case register (listing and each case's details), through the fetch gate 5 s apart; a full pass of the listing weekly, then the changed items only. Nightly at 22:30 NZDT, at most 4 hours."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 18000
+query_timeout_s = 60
+class = "due"
+priority = 61
+command = ["python", "-m", "registers.commerce_commission.capture"]
+at_utc = "09:30"
+nice = 10
+
+[jobs.qv4-commerce-commission-load]
+description = "Step 5.3: the commerce commission lane's reading from the newest finished pass, built in staging, checked, published only on green; nothing when the listing is the one published. Nightly at 06:20 NZDT."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 1200
+query_timeout_s = 600
+class = "due"
+priority = 62
+command = ["python", "-m", "registers.commerce_commission.load", "--job"]
+at_utc = "17:20"
+nice = 10
+then = ["qv4-names-commerce-commission"]   # its names into pub.names (1 November)
+
+[jobs.qv4-fma-capture]
+description = "Step 5.3: the Financial Markets Authority's warnings, alerts and enforcement cases, through the fetch gate 5 s apart; a full pass of the listing weekly, then the changed items only. Nightly at 23:00 NZDT, at most 4 hours."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 18000
+query_timeout_s = 60
+class = "due"
+priority = 63
+command = ["python", "-m", "registers.fma.capture"]
+at_utc = "10:00"
+nice = 10
+
+[jobs.qv4-fma-load]
+description = "Step 5.3: the fma lane's reading from the newest finished pass, built in staging, checked, published only on green; nothing when the listing is the one published. Nightly at 06:25 NZDT."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 1200
+query_timeout_s = 600
+class = "due"
+priority = 64
+command = ["python", "-m", "registers.fma.load", "--job"]
+at_utc = "17:25"
+nice = 10
+then = ["qv4-names-fma"]   # its names into pub.names (1 November)
+
+[jobs.qv4-worksafe-capture]
+description = "Step 5.3: WorkSafe New Zealand's court summaries and enforceable undertakings, through the fetch gate 5 s apart; a full pass of the listing weekly, then the changed items only. Nightly at 23:30 NZDT, at most 4 hours."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 18000
+query_timeout_s = 60
+class = "due"
+priority = 65
+command = ["python", "-m", "registers.worksafe.capture"]
+at_utc = "10:30"
+nice = 10
+
+[jobs.qv4-worksafe-load]
+description = "Step 5.3: the worksafe lane's reading from the newest finished pass, built in staging, checked, published only on green; nothing when the listing is the one published. Nightly at 06:30 NZDT."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 1200
+query_timeout_s = 600
+class = "due"
+priority = 66
+command = ["python", "-m", "registers.worksafe.load", "--job"]
+at_utc = "17:30"
+nice = 10
+then = ["qv4-names-worksafe"]   # its names into pub.names (1 November)
+
+# ── step 5.3, the overseas investment decisions (oio-1). The clock is NZDT (UTC+13) until 5 April 2027. ──
+[jobs.qv4-overseas-investment-capture]
+description = "Step 5.3: the Overseas Investment Office's decision summaries on linz.govt.nz, through the fetch gate 5 s apart: each year's listing weekly (about 27 pages), then the summaries listed and not held (about 1,320 on the first nights, then the month's new ones). Nightly at 23:10 NZDT, at most 3 hours."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 14400
+query_timeout_s = 60
+class = "due"
+priority = 67
+command = ["python", "-m", "registers.overseas_investment.capture"]
+at_utc = "10:10"
+nice = 10
+
+[jobs.qv4-overseas-investment-load]
+description = "Step 5.3: the overseas investment decisions from the newest finished pass, built in staging, checked, published only on green; nothing when the listing is the one published. Nightly at 06:35 NZDT."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 1200
+query_timeout_s = 600
+class = "due"
+priority = 68
+command = ["python", "-m", "registers.overseas_investment.load", "--job"]
+at_utc = "17:35"
+nice = 10
+then = ["qv4-names-overseas-investment"]   # its names into pub.names (1 November)
+
+# ── step 6.3, the grants (grants-1). The clock is NZDT (UTC+13) until 5 April 2027. ──
+[jobs.qv4-grants-capture]
+description = "Step 6.3: the Department of Internal Affairs' national file of class 4 grants (its catalogue page at most every 30 days, the file only when the page changed) and the Lottery Grants Board's records of grants on Community Matters (the site walked whole, resumable, each page again after 30 days), through the fetch gate 5 s apart (10 s for the catalogue); a block or challenge stops that host for the night. Nightly at 22:45 NZDT, at most 4 hours."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 18000
+query_timeout_s = 60
+class = "due"
+priority = 69
+command = ["python", "-m", "registers.grants.capture"]
+at_utc = "09:45"
+nice = 10
+
+[jobs.qv4-grants-load]
+description = "Step 6.3: the grants, recipients and publishers from the newest national file and every record-of-grants page, built in staging, checked, published only on green; nothing when the listing is the one published (a full build 9.8 s). Nightly at 06:35 NZDT."
+needs = "processor"
+memory_gb = 1
+deadline_s = 1200
+query_timeout_s = 600
+class = "due"
+priority = 70
+command = ["python", "-m", "registers.grants.load", "--job"]
+at_utc = "17:35"
+nice = 10
+
+# ── step 6.2 template 3, the settlements lanes (settlements-1). The clock is NZDT (UTC+13) until 5 April 2027. ──
+[jobs.qv4-iwi-directory-capture]
+description = "Step 6.2 template 3: Te Kāhui Māngai walked whole from its home page (about 240 pages, 5 s apart, about 20 minutes), each page landed by hash. Due daily at 22:30 NZDT; the walk itself refuses to start under a week after the last finished walk and stops at 06:00 NZDT, so it walks weekly, off-peak, and the other days cost no request."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 10800
+query_timeout_s = 60
+class = "due"
+priority = 71
+command = ["python", "-m", "registers.iwi_directory.capture", "--budget-s", "7200"]
+at_utc = "09:30"
+nice = 10
+
+[jobs.qv4-iwi-directory-load]
+description = "Step 6.2 template 3: iwi, hapū, marae, organisations, governance entities and their settlements from the newest finished walk, built in staging, checked, published only on green; nothing when the walk is the one published. Daily at 06:35 NZDT, so the Monday after the walk."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 900
+query_timeout_s = 600
+class = "due"
+priority = 72
+command = ["python", "-m", "registers.iwi_directory.load", "--job"]
+at_utc = "17:35"
+then = ["qv4-scan-rerun", "qv4-names-iwi-directory"]   # the stale scan lines re-run (31 October); its names into pub.names (1 November)
+nice = 10
+
+[jobs.qv4-settlement-commitments-watch]
+description = "Step 6.2 template 3: Te Haeata's records address asked once a night (red the day the login wall falls) and the open pages about the source every 30 days, landed by hash. Daily at 23:15 NZDT, inside the capture's off-peak window: a weekly interval landed on Thursday 13:00 NZDT, which the capture refuses, so every weekly slot failed (22 October)."
+needs = "processor"
+memory_gb = 0.2
+deadline_s = 900
+query_timeout_s = 60
+class = "due"
+priority = 73
+command = ["python", "-m", "registers.settlement_commitments.capture"]
+at_utc = "10:15"
+nice = 10
+
+# ── step 6.3, agency contract disclosures and council procurement (procurement-1). The clock is NZDT (UTC+13) until 5 April 2027. ──
+[jobs.qv4-contract-disclosures-refresh]
+description = "Step 6.3: the government data catalogue's descriptions of ACC's health contract file and any changed file, 10 s apart, off-peak. Due daily at 22:40 NZDT; the capture asks nothing until 28 days after its last request, or within a week of a block."
+needs = "processor"
+memory_gb = 0.2
+deadline_s = 1200
+query_timeout_s = 60
+class = "due"
+priority = 74
+command = ["python", "-m", "registers.contract_disclosures.capture", "--refresh"]
+at_utc = "09:40"
+nice = 10
+
+[jobs.qv4-contract-disclosures-load]
+description = "Step 6.3: ACC's health contract costs by class, region, authority and year from the newest file, built in staging, held to the file's own totals, published only on green; nothing when the listing is the one published. Daily at 06:40 NZDT."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 900
+query_timeout_s = 600
+class = "due"
+priority = 75
+command = ["python", "-m", "registers.contract_disclosures.load", "--job"]
+at_utc = "17:40"
+nice = 10
+
+[jobs.qv4-council-procurement-watch]
+description = "Step 6.3: the four pages whose terms keep councils' own procurement lists out (Clutha, Tauranga, Dunedin, VendorPanel), re-read 7 s apart and landed by hash, red the day one changes. Due daily at 22:50 NZDT; the watch asks nothing until 30 days after the last."
+needs = "processor"
+memory_gb = 0.2
+deadline_s = 900
+query_timeout_s = 60
+class = "due"
+priority = 76
+command = ["python", "-m", "registers.council_procurement.capture"]
+at_utc = "09:50"
+nice = 10
+enabled = false   # ruling 136 (3 November 2026): the councils' own award lists are stored, off every schedule, lowest priority
+
+# ── step 6.3, the councils lanes (councils-1). The clock is NZDT (UTC+13) until 5 April 2027. ──
+[jobs.qv4-council-minutes-capture]
+description = "Step 6.3: the InfoCouncil councils' meeting listings (each at most weekly) and every minutes PDF they name, once, 5 s apart, off-peak; the old estate's 347 held PDFs copied by hash where its file is on this box, else the council's own copy fetched once (2 November 2026: none of the old files is here; about 30 minutes at 5 s apart on the next night). About 600 PDFs the first nights, then tens a week. Stops at 06:00 NZDT or its budget."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 10800
+query_timeout_s = 60
+class = "due"
+command = ["python", "-m", "registers.council_minutes.capture", "--budget-s", "7200"]
+at_utc = "09:15"
+nice = 10
+priority = 77
+
+[jobs.qv4-council-minutes-load]
+description = "Step 6.3: the meeting list from every listing held, and every landed minutes PDF read (the standard template deterministically, any other shape replayed from qv4-council-minutes-read's stored readings): attendance, declarations, resolutions; built in staging, checked, published only on green."
+needs = "processor"
+memory_gb = 0.5
+query_timeout_s = 600
+class = "due"
+command = ["python", "-m", "registers.council_minutes.load", "--job"]
+at_utc = "17:45"
+priority = 78
+deadline_s = 2700   # 2 November 2026: the load reads every landed minutes PDF's text layer (616, about 10 minutes)
+
+[jobs.qv4-councillor-interests-capture]
+description = "Step 6.3: each council's register landing page monthly and every register document it links once, 5 s apart (or the site's crawl delay), off-peak; three councils held on their terms, blocked sites held. About 400 requests the first night, a few a night after."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 7200
+query_timeout_s = 60
+class = "due"
+command = ["python", "-m", "registers.councillor_interests.capture", "--budget-s", "3600"]
+at_utc = "11:30"
+nice = 10
+priority = 79
+
+[jobs.qv4-councillor-interests-load]
+description = "Step 6.3: the 78 councils' registers and the structured pages' interests, built in staging, checked (78 councils, nothing withheld published), published only on green."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 900
+query_timeout_s = 600
+class = "due"
+command = ["python", "-m", "registers.councillor_interests.load", "--job"]
+at_utc = "17:50"
+priority = 80
+then = ["qv4-names-councillor-interests"]   # its names into pub.names (1 November)
+
+[jobs.qv4-council-minutes-read]
+description = "Councils' minutes PDFs in any shape but InfoCouncil's standard template: the text reader's reading of one minutes document (piece key sha256) through the text-reader profile, profile council-minutes-text, whole pages in pieces of 12,000 characters (8,192 answer tokens), after minutes.sections drops every public-excluded part and public forum item (hard limit 16): attendance, declarations of interest, every resolution with mover, seconder, text, outcome and votes. Stored by hash and piece, replayed by the next qv4-council-minutes-load (ruling 128 lifted ruling 79's hold for node2; Arthur, 2 November 2026: 'do it'). A PDF with no text layer waits for the page reader."
+needs = "model-profile"
+profile = "text-reader"
+memory_gb = 0.5
+deadline_s = 3600
+query_timeout_s = 60
+class = "whenever"
+priority = 133   # unique; after every reader of the bulk ingest (2 November 2026)
+command = ["python", "-m", "registers.council_minutes.model_read", "--piece"]
+pieces = true
+pieces_command = ["python", "-m", "registers.council_minutes.model_read", "--pieces"]
+can_share = true
+concurrency = 4
+
+[jobs.qv4-council-minutes-pages]
+description = "Councils' minutes PDFs with no text layer (profile council-minutes-scanned, recognised by shape: no usable text layer and page-wide images, never a phrase): every page of one scan (piece key sha256) through the page-reader profile at 200 dpi, stored by hash and page; runs in the page reader's night window (ruling 129). Then qv4-council-minutes-read takes the scans whose pages are all read (the same two skips, then the standard template or the text reader) and the next qv4-council-minutes-load replays both. Queue a row only when the load's ledger shows scans waiting for the page reader (none on 2 November 2026): an empty row would still open the window."
+needs = "model-profile"
+profile = "page-reader"
+memory_gb = 1.5
+deadline_s = 1800
+query_timeout_s = 60
+class = "whenever"
+priority = 137   # unique; 136 to 140 free in every working copy on 2 November 2026 (141, 142 taken elsewhere)
+command = ["python", "-m", "registers.council_minutes.scans", "--piece"]
+pieces = true
+pieces_command = ["python", "-m", "registers.council_minutes.scans", "--pieces"]
+requires = ["pdftoppm"]   # poppler's pdfimages, which the shape check uses, comes with it
+can_share = false
+concurrency = 1
+then = ["qv4-council-minutes-read"]
+
+[jobs.qv4-councillor-interests-read]
+description = "Councils' registers of members' pecuniary interests held as PDFs: the text reader's reading of one register document (piece key sha256) through the text-reader profile, profile interests-register-pdf-text, whole pages in pieces of 12,000 characters (8,192 answer tokens): each member, role, every category as printed with its s 54E kind and its entries; real property, homes, addresses, roads, contacts and a spouse's or partner's interests read and kept too (ruling 142), the contact-shaped entries in councillor_interests_private. Stored by hash and piece, replayed by the next qv4-councillor-interests-load (ruling 128 lifted ruling 79's hold for node2; Arthur, 2 November 2026: 'we want to gather and ingest all of this'). A PDF with no text layer waits for the page reader."
+needs = "model-profile"
+profile = "text-reader"
+memory_gb = 0.5
+deadline_s = 1800
+query_timeout_s = 60
+class = "whenever"
+priority = 127   # unique; after every reader of the bulk ingest (2 November 2026)
+command = ["python", "-m", "registers.councillor_interests.model_read", "--piece"]
+pieces = true
+pieces_command = ["python", "-m", "registers.councillor_interests.model_read", "--pieces"]
+can_share = true
+concurrency = 4
+
+# ── step 6.3, local election candidate returns (local-elections-1). The clock is NZDT (UTC+13) until 5 April 2027. ──
+[jobs.qv4-local-elections-listings]
+description = "Step 6.3: every council returns page listings.tsv seeds (66 pages, 43 councils on 22 October 2026, and their sub-listings two deep), asked once each, 5 s apart or each robots file's crawl delay, landed by hash and read for the returns they link (each new one recorded as wanted). Due daily at 22:10 NZDT; the pass itself refuses to start under a week after the last finished one and outside 22:00 to 06:00, so it runs weekly, off-peak, and the other days cost no request. About 150 requests, about 20 minutes."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 7200
+query_timeout_s = 60
+class = "due"
+priority = 81
+command = ["python", "-m", "registers.local_elections.capture", "listings", "--budget-s", "3600"]
+at_utc = "09:10"
+nice = 10
+
+[jobs.qv4-local-elections-files]
+description = "Step 6.3: each wanted return (a council's candidate return of electoral donations and expenses, PDF, Word or a scan) asked once ever, oldest election first, 5 s apart or the crawl delay, landed by hash and HELD, not read (ruling 79). Daily at 22:20 NZDT; it stops at 06:00 and resumes the next night; a host that blocks or challenges is not asked again that night. About 2,000 files at the first runs (about four nights), then only what the weekly listings add."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 27000
+query_timeout_s = 60
+class = "due"
+priority = 82
+command = ["python", "-m", "registers.local_elections.capture", "files", "--budget-s", "25200"]
+at_utc = "09:20"
+nice = 10
+
+[jobs.qv4-local-elections-load]
+description = "Step 6.3: the returns register rebuilt from every listing page held, in staging, held to check.py's reading rules, published only on green. Daily at 06:40 NZDT, after the files run stops."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 900
+query_timeout_s = 600
+class = "due"
+priority = 83
+command = ["python", "-m", "registers.local_elections.load", "--job"]
+at_utc = "17:40"
+nice = 10
+then = ["qv4-names-local-elections"]   # its names into pub.names (1 November)
+
+# ── disclosures (fix-registers-disclosures-1, 23 October): the Commission's two listings are re-fetched by the old job at
+# 03:34 NZDT and cited by hash, so the lane loads nightly after the frozen release (06:16) and before the build (08:00) ──
+[jobs.qv4-disclosures-load]
+description = "Disclosures: copy the old folder's current Commission listings and scanned declarations by hash, build into staging_disclosures_load, hold them to the lane's check against the frozen site, and publish pub.disclosures and its tables only on green. Daily at 07:40 NZDT."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 900
+query_timeout_s = 600
+class = "due"
+priority = 84
+command = ["python", "-m", "registers.disclosures.load", "--job"]
+at_utc = "18:40"
+then = ["qv4-scan-rerun", "qv4-names-disclosures"]   # the stale scan lines re-run (31 October); its names into pub.names (1 November)
+nice = 10
+
+# Ruling 96 (mcp-1, 27 October 2026): the ingest MCP as a source. The pull
+# lands every record of every corpus as a document by hash and follows the
+# change feed after the cursor; the weekly re-walk finds records changed in
+# place with their stamp unmoved (17,619 written questions on 27 October);
+# the adopt runs once to carry mcp-1's pull from the sample database live.
+
+[jobs.qv4-mcp-adopt]
+description = "Once, before the first nightly pull: re-land mcp-1's pull (sample schema scratch_mcp_1_pull2) into the live docs from the store and copy the cursors, arrivals and stamps. No request to the MCP. Queued by the integrator (ruling 96)."
+needs = "processor"
+memory_gb = 0.5        # measured 169 MB peak on the batch copy (fix-support-mcpsource-1, 27 October); the first one-at-a-time version needed 1,312 MB and ran at 21 documents a second
+deadline_s = 7200
+query_timeout_s = 3600
+class = "whenever"
+priority = 99
+command = ["python", "-m", "support.mcpsource", "--adopt", "scratch_mcp_1_pull2"]
+nice = 10
+
+[jobs.qv4-mcp-pull]
+description = "Every six hours (nightly 02:30 NZDT until 31 October): poll the ingest MCP's corpora through the tunnel and pull records from each cursor, 200 a page, one request at a time, then the change feed after the cursor; every record landed as a document by hash. Stops on its budget and resumes next night. Red on a failed corpus, a caught record, a new field or the MCP counting fewer records than taken (ruling 96)."
+needs = "processor"
+memory_gb = 1.0   # measured 615 MB peak by hand, 28 October (killed at 549 MB the night before)
+deadline_s = 14400
+query_timeout_s = 60
+class = "due"
+priority = 100
+# the corpora by name (3 November 2026): a corpus the MCP adds is pulled only once Arthur has said so; `gets` (GETS tender
+# notices) by ruling 138; `parliament-papers`, `parliament-sc-evidence` and `court-mlc-data` (4 November) by ruling 142
+# ("Get ... all available information ... Always do this")
+command = ["python", "-m", "support.mcpsource", "--budget-s", "12600", "--corpus", "gets",
+           "--corpus", "parliament-papers", "--corpus", "parliament-sc-evidence", "--corpus", "court-mlc-data",
+           "--corpus", "beehive", "--corpus", "parliament-wayback", "--corpus", "parliament-written-questions",
+           "--corpus", "parliament-bills", "--corpus", "parliament-diaries", "--corpus", "parliament-hansard-index",
+           "--corpus", "parliament-hansard-debates", "--corpus", "parliament-bills-historical", "--corpus", "parliament-sops",
+           "--corpus", "parliament-sc-reports", "--corpus", "parliament-sc-submissions", "--corpus", "courts"]
+then = ["qv4-courts-read"]   # the reader reads what the pull lands; it never waited on a green load (3 November: a red load left 6,447 unread)
+every_s = 21600   # every six hours from 31 October (Arthur: the MCP is gathered continuously); was nightly 02:30 NZDT
+nice = 10
+
+[jobs.qv4-mcp-rewalk]
+description = "Weekly: walk every corpus again from 0 to its cursor, landing records the MCP changed in place with their stamp unmoved (its change feed cannot show them). Resumes where the last stopped; also the fix when the pull reports the MCP counting fewer records than taken (ruling 96). The catalogue has no weekday, so every seven days from its first run."
+needs = "processor"
+memory_gb = 1.0   # declared 0.3, killed at 622 MB on 29 October: the walk holds every corpus's page list
+deadline_s = 14400
+query_timeout_s = 60
+class = "whenever"
+priority = 101
+command = ["python", "-m", "support.mcpsource", "--rewalk", "--budget-s", "12600"]
+every_s = 604800
+nice = 10
+
+# ── the Beehive's text reader (beehive-2; Arthur, 31 October 2026 08:40) ──
+[jobs.qv4-beehive-read]
+description = "Beehive: the text reader's reading of one release (piece key sha256, the MCP record's hash) through the text-reader profile: every person and body named with kind, role, the role as the text says it, the organisation a person is of, and a one-line summary; stored by hash, replayed by the next qv4-beehive-load. Keys from python -m registers.beehive.model_read --pieces (every release waiting, newest first)."
+needs = "model-profile"
+profile = "text-reader"
+memory_gb = 0.5
+deadline_s = 600
+query_timeout_s = 60
+class = "whenever"
+priority = 28
+command = ["python", "-m", "registers.beehive.model_read", "--piece"]
+pieces = true
+can_share = true
+concurrency = 4
+
+[jobs.qv4-beehive-load]
+description = "Beehive: rebuild the lane's tables from the MCP's beehive documents and the old estate's export, publish pub.beehive_releases and its tables on green. Nightly at 04:00 NZDT, after the pull (ruling 96)."
+needs = "processor"
+memory_gb = 3.0   # measured 2,459 MB peak by hand, 28 October (killed at 1,489 MB the night before)
+deadline_s = 1800
+query_timeout_s = 600
+class = "due"
+priority = 85
+command = ["python", "-m", "registers.beehive.load"]
+at_utc = "15:00"
+nice = 10
+then = ["qv4-names-beehive"]   # its names into pub.names (1 November)
+
+[jobs.qv4-hansard-read]
+description = "Hansard: the text reader's reading of one sitting day (piece key sha256 of the MCP's debates record) through the text-reader profile: the day split by profile hansard-day into pieces of at most 40,000 characters, every person and body a speech names with its kind, role and 'of', one summary a piece; the pieces stored at page p and joined at page 1 under the day's hash, replayed by the next load. Keys from python -m registers.hansard.model_read --pieces."
+needs = "model-profile"
+profile = "text-reader"
+memory_gb = 0.5
+deadline_s = 7200
+query_timeout_s = 300
+class = "whenever"
+priority = 29   # 26 is qv4-courts-read's; after beehive (28), before parliament (Arthur's order, 31 October)
+command = ["python", "-m", "registers.hansard.model_read", "--piece"]
+pieces = true
+can_share = true
+concurrency = 4
+
+[jobs.qv4-hansard-load]
+description = "Hansard: rebuild the lane's tables from the old export and the MCP's hansard index and daily-PDF documents, publish pub.hansard_sittings, sections, speeches and days on green. Nightly at 04:15 NZDT, after the pull and beside the Beehive load (rulings 96, 97; hansard-2)."
+needs = "processor"
+memory_gb = 1.0
+deadline_s = 1800
+query_timeout_s = 600
+class = "due"
+priority = 86
+command = ["python", "-m", "registers.hansard.load"]
+at_utc = "15:15"
+nice = 10
+then = ["qv4-names-hansard"]   # its names into pub.names (1 November)
+
+[jobs.qv4-ministers-diaries-load]
+description = "Ministers' diaries: rebuild the lane's tables from the MCP's parliament-diaries documents, publish pub.minister_diary_releases and pub.minister_diary_entries on green. Nightly at 04:20 NZDT, after the pull and the Beehive load (ruling 96; diaries-2, 27 October 2026)."
+needs = "processor"
+memory_gb = 1.5   # measured 1,127 MB peak on 28 October under a 1.0 figure (ceiling 1,280 MB); raised before it crossed
+deadline_s = 1800
+query_timeout_s = 600
+class = "due"
+priority = 87
+command = ["python", "-m", "registers.ministers_diaries.load"]
+at_utc = "15:20"
+nice = 10
+then = ["qv4-names-ministers-diaries"]   # its names into pub.names (1 November)
+
+# ── step 4.1, parliament: the text reader (parliament-2; Arthur's common rules for the MCP names readers, 31 October 2026) ──
+[jobs.qv4-parliament-read]
+description = "Parliament: the text reader's reading of one piece (key sha256) through the text-reader profile: an archived parliament.nz page (in pieces when over the profile's budget, joined under its hash) or a batch of up to 16 written questions of one year and number range in one request; every person and body named with kind, role and the organisation they are of, one summary line; stored by hash, replayed by the next load into parliament.people. Keys from python -m registers.parliament.model_read --pieces (the pages first, newest first, then the questions' batch leaders)."
+needs = "model-profile"
+profile = "text-reader"
+memory_gb = 0.5
+deadline_s = 3600   # a 29-piece page: its pieces four at a time, eight rounds; 20 to 35 minutes under a shared server
+query_timeout_s = 300
+class = "whenever"
+priority = 103   # 28 is qv4-beehive-read's and 30 to 102 are taken: last of the readers (Arthur's order, 31 October)
+command = ["python", "-m", "registers.parliament.model_read", "--piece"]
+pieces = true
+can_share = true
+concurrency = 4
+
+[jobs.qv4-parliament-load]
+description = "Parliament: rebuild the lane's tables from the MCP's nine parliament corpora, publish pub.parliament_written_questions, pub.parliament_api_items and pub.parliament_wayback_pages on green. Nightly at 04:30 NZDT, after the pull (ruling 96; parliament-1, 27 October 2026)."
+needs = "processor"
+memory_gb = 3.0   # peak 2,393 MB on 31 October (run 27aa46b9) passed the 2 GB declared
+deadline_s = 3600
+query_timeout_s = 600
+class = "due"
+priority = 88
+command = ["python", "-m", "registers.parliament.load"]
+at_utc = "15:30"
+nice = 10
+then = ["qv4-names-parliament"]   # its names into pub.names (1 November)
+
+[jobs.qv4-candidate-returns-load]
+description = "Candidate returns (step 4.1): rebuild the lane's tables from the held files by hash and the stored readings, publish pub.candidate_return_totals (read returns, then the Commission's spreadsheet rows where none is read, candidate-returns-3) and pub.candidate_return_donors; fetches nothing, calls no model; raises when the catch log does not reconcile. Nightly at 02:40 NZDT, before the site build (lane spec)."
+needs = "processor"
+memory_gb = 1.0
+deadline_s = 1800
+query_timeout_s = 600
+class = "due"
+priority = 102
+command = ["python", "-m", "registers.candidate_returns.load"]
+at_utc = "13:40"
+then = ["qv4-scan-rerun", "qv4-names-candidate-returns"]   # the stale scan lines re-run (31 October); its names into pub.names (1 November)
+nice = 10
+
+# ── the deterministic name pass (Arthur, 31 October 2026, 23:40; approved for the night at 23:45) ──
+# Every name of pub.names found in each lane's documents by exact match before the model reads them (links/sightings.py).
+# A load queues its lane's pass; the courts pass queues the courts reader. The forms are rebuilt after a links build.
+[jobs.qv4-sightings-forms]
+description = "The name pass: the forms of every pub.names name (links.name_forms), rebuilt after a links build; then each lane's pass, which rescans under the new forms and removes the old version's sightings."
+needs = "processor"
+memory_gb = 2.0   # 0.5 GB measured for a scan holding the forms, 31 October; the build holds them twice
+deadline_s = 900
+query_timeout_s = 600
+class = "whenever"
+priority = 16
+command = ["python", "-m", "links.sightings", "forms"]
+then = ["qv4-sightings-beehive", "qv4-sightings-hansard", "qv4-sightings-parliament", "qv4-sightings-courts"]
+nice = 10
+
+[jobs.qv4-sightings-courts]
+description = "The name pass over the courts documents not yet scanned under the current forms (links.sightings), then the courts reader."
+needs = "processor"
+memory_gb = 1.0   # 0.5 GB measured, 31 October
+deadline_s = 3600
+query_timeout_s = 600
+class = "whenever"
+priority = 17
+command = ["python", "-m", "links.sightings", "scan", "--lane", "courts"]
+then = ["qv4-courts-read"]
+nice = 10
+
+[jobs.qv4-sightings-beehive]
+description = "The name pass over the Beehive releases not yet scanned under the current forms (links.sightings)."
+needs = "processor"
+memory_gb = 1.0
+deadline_s = 3600
+query_timeout_s = 600
+class = "whenever"
+priority = 18
+command = ["python", "-m", "links.sightings", "scan", "--lane", "beehive"]
+nice = 10
+
+[jobs.qv4-sightings-hansard]
+description = "The name pass over the Hansard days not yet scanned under the current forms (links.sightings)."
+needs = "processor"
+memory_gb = 1.0
+deadline_s = 3600
+query_timeout_s = 600
+class = "whenever"
+priority = 19
+command = ["python", "-m", "links.sightings", "scan", "--lane", "hansard"]
+nice = 10
+
+[jobs.qv4-sightings-parliament]
+description = "The name pass over the archived parliament pages and the written questions not yet scanned under the current forms (links.sightings)."
+needs = "processor"
+memory_gb = 1.0
+deadline_s = 3600
+query_timeout_s = 600
+class = "whenever"
+priority = 104
+command = ["python", "-m", "links.sightings", "scan", "--lane", "parliament-wayback", "--lane", "parliament-questions"]
+nice = 10
+
+# ── a lane's names into pub.names as soon as its load publishes them (Arthur, 1 November 2026) ──
+# Each load queues its own register's refill of links.rows (pub.names is a view on it); a reader lane's refill then
+# queues its name pass. links.rows takes a lock, so refills and the links build run one at a time.
+
+[jobs.qv4-names-charities]
+description = "The charities register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register charities); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 105
+command = ["python", "-m", "links.rows", "--register", "charities"]
+nice = 10
+
+[jobs.qv4-names-party-boards]
+description = "The party_boards register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register party_boards); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 106
+command = ["python", "-m", "links.rows", "--register", "party_boards"]
+nice = 10
+
+[jobs.qv4-names-courts]
+description = "The courts register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register courts); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 107
+command = ["python", "-m", "links.rows", "--register", "courts"]
+then = ["qv4-sightings-courts"]
+nice = 10
+
+[jobs.qv4-names-limited-partnerships]
+description = "The limited_partnerships register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register limited_partnerships); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 108
+command = ["python", "-m", "links.rows", "--register", "limited_partnerships"]
+nice = 10
+
+[jobs.qv4-names-building-practitioners]
+description = "The building_practitioners register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register building_practitioners); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 109
+command = ["python", "-m", "links.rows", "--register", "building_practitioners"]
+nice = 10
+
+[jobs.qv4-names-tenders]
+description = "The tenders register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register tenders); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 110
+command = ["python", "-m", "links.rows", "--register", "tenders"]
+nice = 10
+
+[jobs.qv4-names-commerce-commission]
+description = "The commerce_commission register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register commerce_commission); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 111
+command = ["python", "-m", "links.rows", "--register", "commerce_commission"]
+nice = 10
+
+[jobs.qv4-names-fma]
+description = "The fma register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register fma); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 112
+command = ["python", "-m", "links.rows", "--register", "fma"]
+nice = 10
+
+[jobs.qv4-names-worksafe]
+description = "The worksafe register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register worksafe); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 113
+command = ["python", "-m", "links.rows", "--register", "worksafe"]
+nice = 10
+
+[jobs.qv4-names-overseas-investment]
+description = "The overseas_investment register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register overseas_investment); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 114
+command = ["python", "-m", "links.rows", "--register", "overseas_investment"]
+nice = 10
+
+[jobs.qv4-names-iwi-directory]
+description = "The iwi_directory register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register iwi_directory); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 115
+command = ["python", "-m", "links.rows", "--register", "iwi_directory"]
+nice = 10
+
+[jobs.qv4-names-councillor-interests]
+description = "The councillor_interests register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register councillor_interests); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 116
+command = ["python", "-m", "links.rows", "--register", "councillor_interests"]
+nice = 10
+
+[jobs.qv4-names-local-elections]
+description = "The local_elections register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register local_elections); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 117
+command = ["python", "-m", "links.rows", "--register", "local_elections"]
+nice = 10
+
+[jobs.qv4-names-disclosures]
+description = "The disclosures register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register disclosures); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 118
+command = ["python", "-m", "links.rows", "--register", "disclosures"]
+nice = 10
+
+[jobs.qv4-names-beehive]
+description = "The beehive register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register beehive); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 119
+command = ["python", "-m", "links.rows", "--register", "beehive"]
+then = ["qv4-sightings-beehive"]
+nice = 10
+
+[jobs.qv4-names-hansard]
+description = "The hansard register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register hansard); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 120
+command = ["python", "-m", "links.rows", "--register", "hansard"]
+then = ["qv4-sightings-hansard"]
+nice = 10
+
+[jobs.qv4-names-ministers-diaries]
+description = "The ministers_diaries register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register ministers_diaries); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 121
+command = ["python", "-m", "links.rows", "--register", "ministers_diaries"]
+nice = 10
+
+[jobs.qv4-names-parliament]
+description = "The parliament register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register parliament); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 122
+command = ["python", "-m", "links.rows", "--register", "parliament"]
+then = ["qv4-sightings-parliament"]
+nice = 10
+
+[jobs.qv4-names-candidate-returns]
+description = "The candidate_returns register's names refilled into links.rows, so pub.names carries what its load has just published (links.rows --register candidate_returns); the other registers' rows stand."
+needs = "processor"
+memory_gb = 2.0
+deadline_s = 1800
+query_timeout_s = 900
+class = "whenever"
+priority = 123
+command = ["python", "-m", "links.rows", "--register", "candidate_returns"]
+nice = 10
+
+# ── step 8.3, LINZ (registers/linz; Arthur, 2 November 2026): the LINZ Data Service's titles, title owners and place names ──
+[jobs.qv4-linz-capture]
+description = "Step 8.3: the LINZ Data Service's WFS through the fetch gate with our key (linz.env, an Authorization header, never in a URL): each source whose newest pull is past its refresh or unfinished, first the five typed sources (place names, the private property spine (table 113970, layer 123113 read whole with its points, table 115638), titles, owners: small first, weekly), then every other land layer and table of the catalogue (ruling 142: registers/linz/catalogue.py, 166 read whole into linz_private, by tranche and size: parcels and the title-parcel association first; titles, memorials, properties, valuation weekly; the Full Landonline Dataset monthly; the survey's measurements quarterly), a source not yet surveyed surveyed first; 10,000 rows a page, one request at a time at the gate's floor, off-peak, each page landed once by hash, stopping when the document store has under 200 GB free; a failed read stops the night and holds the host (ruling 141) and the next resumes. Nightly 22:30 NZDT, at most 6 hours."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 22500
+query_timeout_s = 120
+class = "due"
+priority = 175   # unique (2 November 2026)
+command = ["python", "-m", "registers.linz.capture", "--due", "--budget-s", "21600"]
+at_utc = "09:30"
+then = ["qv4-linz-load"]
+nice = 10
+
+[jobs.qv4-linz-load]
+description = "Step 8.3: each LINZ source's newest finished pull read into pub.linz_titles, pub.linz_title_owners and pub.linz_place_names, and the private property spine into linz_private with each title's street address joined on ids (linz_private.title_addresses, never published); each catalogue source with a new pull read whole into its own linz_private table (not while the database's disk has under 150 GB free); then each title the spine gives no address joined by geometry, parcel polygon to address points in Python (linz_private.title_address_points); built in staging, checked (rows read against the service's stated count within 0.1%, every row read or set aside, a title number and a row id once, owners' titles present, no address column in a pub.linz_* view, the titles with an address over the floor, the geometry join's titles among the titles and off the spine, the profile's extract list aligned), published only on green, a private table moved in whole; a source with no new pull keeps what is published. After each night's capture."
+needs = "processor"
+memory_gb = 6.0
+deadline_s = 14400
+query_timeout_s = 1800
+class = "due"
+priority = 176   # unique (2 November 2026)
+command = ["python", "-m", "registers.linz.load", "--job"]
+# ── step 8.4's lane, the Insolvency Register (the API product, subscribed 2 November 2026) ──
+# The removals first every night (the API's term for a holder of a copy: asked at least daily, each named estate out at
+# once), then the search and details on the same host one at a time, then the load. One chain, so never two calls at once.
+[jobs.qv4-insolvency-removals]
+description = "The Insolvency Register: the API's removals and corrections since the last run (GET /insolvencies/removalorcorrections), every estate it names deleted from insolvency.estates at once and its stored answers withdrawn, then each asked again (a correction comes back, a removal stays out). The API's own term for a holder of a copy: at least daily. Through the fetch gate, 5 s apart. Daily at 21:00 NZDT, never skipped for the hours."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 1800
+query_timeout_s = 300
+class = "due"
+priority = 181   # unique; the term job: before its capture
+command = ["python", "-m", "registers.insolvency.capture", "--removals"]
+at_utc = "08:00"
+nice = 10
+then = ["qv4-insolvency-capture"]
+
+[jobs.qv4-insolvency-capture]
+description = "The Insolvency Register: the API's search by adjudication date, a month at a time, both registers (Insolvency, DRO), walked back to 1990 over the first nights and the latest 60 days again every night; then each estate's detail where missing or older than 30 days. One gated call at least 5 s apart, 21:00 to 22:00 NZDT, never Wednesday (the interface's maintenance); every address field and birth month and year taken out before landing. Stops at a failed read. Queued by qv4-insolvency-removals."
+needs = "processor"
+memory_gb = 0.3
+deadline_s = 3900
+query_timeout_s = 300
+class = "due"
+priority = 182
+command = ["python", "-m", "registers.insolvency.capture", "--night", "--budget-s", "3300"]
+nice = 10
+then = ["qv4-insolvency-load"]
+
+[jobs.qv4-insolvency-load]
+description = "The Insolvency Register: the capture's ledger read into staging_insolvency_load, checked (removals asked within two days, nothing suppressed, annulled or past the API's display window, no address column, in equals out, the estates seen within 1% of the API's own totalItems), published (pub.insolvency_people, pub.insolvency_companies) only on green; an estate removed after the build is taken out again at publish. Queued by qv4-insolvency-capture."
+needs = "processor"
+memory_gb = 0.5
+deadline_s = 1200
+query_timeout_s = 600
+class = "due"
+priority = 183
+command = ["python", "-m", "registers.insolvency.load", "--job"]
+nice = 10
+
+# ── step 8.6, the Papers Past archive (Arthur, 2 November 2026: "use the 4tb HDD"; "for papers past use tantivity and go") ──
+# Searched, never mined (hard limit 17): neither job feeds names or links (tests/test_papers_past_search_only.py).
+# No clock: the integrator queues the ingest once; the index follows it. Nothing is published: the integrator publishes
+# after registers.papers_past.check passes on the whole.
+[jobs.qv4-papers-past-ingest]
+description = "The Papers Past archive: one streaming pass of the old news-scraping dump (read only, where it sits), every Papers Past row read through the named stages, its text into compressed files on /mnt/hdd2/qv4-papers-past (never /mnt/hdd) and its catalogue row into staging_papers_past in querynz_v4, committed every 1,000,000 rows with a checkpoint; a run stopped at its deadline or killed resumes after its last committed chunk when queued again (the dump is re-streamed to the checkpoint undecoded). Ends with the whole batch reconciled and 2,000 items read back. Then qv4-papers-past-index."
+needs = "processor"
+memory_gb = 1.5   # measured 2 November 2026: 0.95 GB peak resident on a 1,000,000-row chunk (297 s)
+deadline_s = 43200   # the whole dump projected at about 7.5 hours (1,000,000 rows in 297 s); a stopped run resumes
+query_timeout_s = 3600
+class = "whenever"
+priority = 134   # unique (2 November 2026)
+command = ["python", "-m", "registers.papers_past.load", "--schema", "staging_papers_past", "--database", "querynz_v4", "--items", "0"]
+requires = ["gzip", "ionice"]
+nice = 15
+then = ["qv4-papers-past-index"]
+
+[jobs.qv4-papers-past-index]
+description = "The Papers Past keyword index (tantivy, Arthur 2 November 2026): every catalogued item of staging_papers_past streamed from the store's files, frame by frame, into a tantivy index in the store's index/ folder on /mnt/hdd2, built beside the old one and moved into place whole; tantivy's heap capped at 1.5 GB over 2 threads; fails unless the index holds every catalogued item. Queued by qv4-papers-past-ingest."
+needs = "processor"
+memory_gb = 10.0   # raise 6 folded; measured 3 November 2026 over the whole archive (86,729,541 items, 8,390 s, 1.5 GB heap, 2 threads): Pss_Anon peak 6,420 MB (the 4 GB figure stopped at 5,122 MB, raise 6); the mapped segment files (15 GB of clean Pss_File at the end) are not counted (memory_counts)
+memory_counts = "anon"   # judged on Pss_Anon + Pss_Shmem: the mapped index files are read, never dirtied
+deadline_s = 43200   # 956,344 items in 142 s on 2 threads (sample, 2 November 2026): about 3.6 hours for the whole archive
+query_timeout_s = 3600
+class = "whenever"
+priority = 135   # unique (2 November 2026)
+command = ["python", "-m", "registers.papers_past.index", "--schema", "staging_papers_past", "--database", "querynz_v4", "--engine", "tantivy"]
+requires = ["ionice"]
+nice = 15
+
+[jobs.qv4-courts-jdo-capture]
+description = "Courts, the estate's own capture of what the MCP lacks (ruling 140, tranche 1): Judicial Decisions Online's JSON listing at www.justice.govt.nz, every court the taxonomy names, one year at a time (the listing's 10,000 cap), each decision's PDF landed by hash (source courts-jdo) unless the MCP already landed its address; the ledger courts.own_files and the cursor courts.own_cursor are never wiped. One gated request at least 5 s apart, 22:00 to 06:00 NZDT only; a 403, 429, 5xx, challenge, reset or a non-PDF stops the run, a 404 is recorded and passed. The back catalogue (about 47,000 decisions) takes about nine nights; then each night the current and last year's newest pages. Once JDO's walk reaches its end for the night, the same run walks the Ministry's decisions finder on the same host with what is left of the budget (tranche 2: 22 jurisdictions, 25 a page, source courts-finder, about 15,000 decisions over about three nights; then each night each jurisdiction's newest page). The 04:40 courts load reads what has landed by then (a job with a clock of its own is not queued by another)."
+needs = "processor"
+memory_gb = 0.3   # measured 3 November 2026: 47 MB peak RSS on the daytime trial (10 requests; the MCP's courts addresses held in a set, one PDF at a time)
+deadline_s = 27900
+query_timeout_s = 300
+class = "due"
+priority = 143   # unique (3 November 2026)
+command = ["python", "-m", "registers.courts.own", "--jdo", "--budget-s", "27600"]
+at_utc = "09:00"
+nice = 10
+
+[jobs.qv4-courts-era-capture]
+description = "Courts, the estate's own capture of what the MCP lacks (ruling 140, tranche 3): the Employment Relations Authority's determinations at determinations.era.govt.nz, its own search form a year at a time (10 a page, newest first, 2000 to now), each determination's PDF landed by hash (source courts-era) unless the MCP already landed its address; the same ledger and cursor as the JDO capture, never wiped. Its own host, so it runs the same nights beside the JDO capture: one gated request at least 5 s apart, 22:00 to 06:00 NZDT only; a 403, 429, 5xx, challenge, reset, a page that is not the Authority's results, or a non-PDF stops the run, a 404 is recorded and passed. The back catalogue (about 21,700 determinations, about 23,000 requests) takes about four nights; then each night this year's and last year's newest pages. The 04:40 courts load reads what has landed by then."
+needs = "processor"
+memory_gb = 0.3   # unmeasured on its own: the JDO capture's figure (47 MB peak on its trial); measured on the trial below
+deadline_s = 27900
+query_timeout_s = 300
+class = "due"
+priority = 144   # unique (3 November 2026)
+command = ["python", "-m", "registers.courts.own", "--era", "--budget-s", "27600"]
+at_utc = "09:00"
+nice = 10

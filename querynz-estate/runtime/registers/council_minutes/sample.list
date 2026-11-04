@@ -1,0 +1,21 @@
+# registers/council_minutes/sample.list: hashes and key: lines only. Landed 22 October 2026 by councils-1 through the
+# fetch gate (the survey: each instance's default page once, 5 s apart, daytime).
+# `key: listing <sha256>`: an InfoCouncil instance's meeting listing; its address is the name the store keeps.
+# Hutt City (PDF only, minutes in their own column), Carterton (supplementary rows share a meeting number),
+# Palmerston North (codes with a hyphen, minutes attachments), Horowhenua (file names with no number), Dunedin
+# (no link ids; dates printed 22/10/2026).
+key: listing fd6fd66b4b3341fdda4a5a000829dad593999350705e48e1071292d1cd79e06f
+key: listing a1f173f1d3f9541fefe355f563d340a5299b8207b79c60ea8e6227ebfd880ed8
+key: listing 7f7d16ef0714b23eaea11527a0e8977812e1f8fdd2504f74659086a1bfc4af40
+key: listing 299ec3eb1a30cb0ba153f62e38fb311a5de00fdcbffe2607b72d3926b93e48cc
+key: listing 75b02cc8466d703af807195db5223c33381d5de8d02fe8cb91db7a293e78c134
+# `key: minutes <sha256>`: a minutes PDF landed whole and never read (Carterton, the survey's one probe)
+key: minutes 892161ef42f63b98ff4ee674ca39981e995d2498e73716b4ee68266741add763
+# `key: old-listing <sha256>`: the old estate's listing of the 351 InfoCouncil PDFs it holds (exported once)
+key: old-listing 2264a8579224e796d450e61494b6c9285ace3efd7589ea672d90eb0be13bcb9b
+# `key: minutes <sha256>` for the scan tests (2 November 2026): real landed minutes with a text layer, rasterised in the
+# test into image-only copies: Western Bay of Plenty (standard template, a public forum item, two public-excluded
+# parts), Central Otago (standard template, one public-excluded part), Carterton (another shape, one public-excluded part)
+key: minutes 147a9e274699ebc1dc1123684a950a4cff165e49be8c98df928e7e21371eeed5
+key: minutes 3b2235a2968ec014e7abd632f54d9f3f2401d895f7b1b26b9ca32e9894c8901f
+key: minutes adaa699eb6013b13701567a0a22c86dbe12c4a21df6ae38f1b7a2dcb02bcb68c

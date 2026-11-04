@@ -1,0 +1,39 @@
+# registers/courts/sample.list (plan 1b.6): hashes only, never bytes or rows. Each hash is a RECORD of the MCP's courts
+# corpus as support/mcpsource landed it (the record names its file by hash and url); a comment says what case the
+# record proves, never whose it is. 30 October 2026, the first pull (5,611 records).
+# The old estate's once-only listing (21 October 2026): a document, kept to report the judgments the corpus lacks.
+8285d0068216f1675561dc260eb370ca9b6f1d78fae26e3d483d3a35aab79572 the old listing, 359 documents; not a source
+804d3ccb00e7a9a078a9f5498cbd57d32b6094a4105731bc3c2d9e565c5f6f6d NZSC, two banners above the court line; three anonymised appellants on one line
+53178025fc9bd798548513494ad5cf9df57a63efb44dc7662db42909766e0183 NZSC, IN THE MATTER OF a reference, with a role under it
+8461bc9df348ac20dec2af7af64019504eaa076b82509f472a7eb9444ecd6e4b NZSC consolidated appeal: seven case numbers, a caption over two pages, lists split low
+6b162385c8d40b569b5c70313734ac64c191f80e1b273255f4af1fed69275302 NZSC, a Family Court Act banner
+9f2d80435838e7d5b8785571933cc78a6f7a1fd88cff48514fbc5fcfd66842e0 NZHC criminal, two defendants joined by "&" over two lines
+23f77fb0fe02bc49299d4fc50f8909aa786185745834f9b41d040a16f8fd3e3b NZHC civil, nine defendants "as trustees of" a trust; suppression in the text
+0ed1425a0d2f5cb30ac5126eaea2393fa426101ac646215dec5b02dfef2e88a2 NZHC, the second document of a reissued citation
+1c38d488859f478dc104a70042ca18894cf7e563607342b3b4bc577d9fdcb137 a case page: court, case name, citation, dates, links to its decision and release
+bb155d9457c62223071d0e862a77f61aca967e3d1b4b5cf4185f9a083bb93ce0 NZSC, the decision of that case page (slug rimmer-v-wilton), an intervener on the counsel lines
+da31d171f248157d0a6fea5361566b6ca8c3e17a33e8b71355d0850cc1672e65 a media release: press summary words, the date line, the citation and case number
+f36697ef4bdd1a1e1a74c3c2570997edb312fc14ff32df89c803eea20064d2bb a hearing transcript: its [year] NZSC Trans n citation and speaker lines
+5eef7e5d2963b6cdc2bf73261237b59ee846b4908d8c456f44149056cf117103 counsel's submissions: the word under a caption, no judgment heading
+a620df88476baff89b6e3b30c594109a90a8ff1d7755091a9e5909e3439abb00 a case synopsis: its own words on page 1
+19c3a9919b0490a39a516478a4ae9927bbcc6925f46f952a9366fe30f9c22087 NZCA judgment hosted by the JDO under an opaque name: recognised by its court line, not its name
+b67c626d95a28da05ccd71a51ad31ad61c9c4eaaea6f184b2d9e6c5f5b4152ba an Employment Court judgment: the generic judgment profile, citation [year] NZEmpC n
+4938e094bf6d17095c99ec884bd5253c747e3fb268cfe86e32fafc2e7955bdfd a press summary the MCP filed as judgment_pdf: recognised by its words, not the record's kind
+839d101ae7a9a7bfc66d99f71b9669d2842aebeb3fa4fc799392785c36e64a77 a PDF with no text layer on page 1: waits for the page reader
+ecd3d7da1ba4591562305314a0f9df5a52ed0954449134951ff8b3db9e18a639 a court's hearing schedule: no shape recognised, a catch-log line at recognise
+6733b63810f6b3c60f6581652648d02d711d333f411dd41491ab66b209a747dd crawl noise: a stylesheet served as a case page, set aside at recognise
+9ac347866801249a8a7660d869cb19d667bb405a1b3061f07fbda810f941c66a a record whose file the pull caught (hash differs): a catch-log line, stage pull
+c71b3776965ee5c189cf195f2611ed6b620f52a91ca39199d4ffae1491847d5f a case page the corpus holds under two record urls: the plain one, read once for both
+f876842e1dee7141008e1a3507b34cebc3b6bbe8a8a2550ac0b75645712e8482 the same case page under its url with ?searchterm=None: its row takes the other's reading, no second case row
+# 31 October 2026, the pulls of 30 and 31 October (fix-registers-courts-2): the provider's new kinds, and a transcript cover sheet
+3e2ee4b0ee69e464306e0fd6fa0727f26230f87ee3699ae8951cb61956a93977 an Employment Relations Authority determination with a non-publication order in its text; 16 pages, read in two pieces by its paragraphs
+92db86409562499af802c7f1b85c4f5bdee3059ba5d9a519fe6a2dda6f24b497 an Employment Relations Authority determination, 6 pages, one piece, no order
+15e4b7353bdc858a41adda1011a8953972856559b9d40dbd34b1ee4b93e21fc7 a Human Rights Review Tribunal decision with an upper-case publication note; 29 pages, three pieces
+a4e2473f80dd205603908a1c0a9981b499e04374f2c048f2f9ca76bece1d663a a Human Rights Review Tribunal decision, 8 pages, one piece, an order in its text
+e649ed7bc7e9e4b2ac20381e2e2a6afe3efec70b67a30ce33e815a1b708b0e43 a Lawyers and Conveyancers Disciplinary Tribunal decision: a tribunal with no court line, its citation code
+d5812fe35896d58c7720c83f7492dc3a91ad1ed5a63a7a48414015ccb2e41606 an Immigration Advisers Complaints and Disciplinary Tribunal order: its suppression note, REPRESENTATION label, 16 pages in two pieces
+ca4b0e109bc450bc41ffd995fa9ef5d06b2344314cd6475c2371ad61b3b1f95c a Social Security Appeal Authority decision: BEFORE THE … AUTHORITY after IN THE MATTER lines
+f1285b7fd8b5d218aeed584732888855a72d241087887f9e9be38d9878b98e54 a District Court ACC appeal: IN THE DISTRICT COURT AT a registry, citation [year] NZACC n
+95a803dc33c3fee9c22586b93363b15b51ce412b00945a5bb57d159c9883167f a 2016 hearing transcript under a judgment-like cover sheet (case number beside the court line, Appearances, no citation): 50 pages, read by pages in three pieces
+5bedbc045dad2a344bddd76e48b41ea4f960e3c30ee6b11ffd14f975a3526cfc a 2004 hearing transcript in the two-column layout (the speaker in a left column, no colon; the case number beside the court line, no Appearances): 15 pages, read by pages in two pieces
+598ba94ec80810bf8c87edbc03028db74357c665cfd02d20302bf85e9d163e01 an Authority determination whose paragraphs carry no numbers in its text layer: 16 pages, just over the budget, the paragraphs rule cannot split it; set aside at read, named

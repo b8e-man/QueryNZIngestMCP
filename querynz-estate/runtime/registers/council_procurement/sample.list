@@ -1,0 +1,7 @@
+# registers/council_procurement/sample.list: hashes and key: lines only. Landed 22 October 2026 by procurement-1
+# through the fetch gate (the survey, 20:00 to 20:20 NZDT, 5 s apart and Clutha's 7 s; no block on these four).
+# The four watched pages, each still saying what bars the capture: `key: bars <url> <sha256>`
+key: bars https://www.cluthadc.govt.nz/terms-and-conditions 8ec7239c87ea48bacd8ea715c75279e3fab90dc6d03da6af7407d2ec6e446c4c
+key: bars https://www.tauranga.govt.nz/terms-of-use b8f6c4fd48e97ee147a27146a484562c3256660a80ab32e83a4999debe082e70
+key: bars https://www.dunedin.govt.nz/about-this-site 673bdefd550aaf47752ab618f12f52b4b158bd065874a8e42f84003d61745af8
+key: bars https://www.vendorpanel.nz/marketplace 1f27cf1b0407926a94b44ea56af310fecb38b75901c00e8b7810638bcead474c

@@ -1,0 +1,17 @@
+# registers/settlement_commitments/sample.list: hashes and key: lines only. Landed 22 October 2026 by settlements-1
+# through the fetch gate (the survey, 5 s apart; no block, no challenge).
+# Te Haeata: the login wall (the one page home, /settlements, /commitments and /resources all answered with)
+key: wall ca096c67a2d211eca4094c3e38efe387fab0e88b715bf9c20d48a7f56157c31f
+# Te Haeata's open pages: about, copyright, terms of use, privacy
+key: open 7b5d9351eb1d1d42d3c4278e4bd80b60c3d5b8760cd1a8b89203e32be9f3c20e
+key: open beb3325204b950473126657a113efc2e308ba184e03b6dcecf29ea48f5ef5e13
+key: open 4e9b9c0a50c1572e5aa793db418c12a8139687636042133f61b025c792fc3398
+key: open 66a7bf609264bd08a9b938514f07e7c33105b559e255358ce094ea1142a58b53
+# Te Tari Whakatau (the position's evidence; never asked by the job): home, copyright (CC BY 4.0), disclaimer and terms
+# of use (data collection barred), one settlement page (surveyed before the terms were read)
+f08b31bb4bcf2bd45be3469686473b5bdc4e6390fbea29f1b4bfb3a58ab97995
+e54c2a9920b9f62d8169dab7693e2491c43ffbae5cb0ce003cc9dd5b11c4da7c
+0f9441463b09c3dd42c8d4db15248fbf552c84a05e8114cd4504ace095f012eb
+1d65bbeaf6393b37c1aa0cca3da354f542a4c16a117c191030f6d2d72ebdec6e
+# the government data catalogue: no record of Te Haeata
+d381c6238a80201e288fc37d8cbcf3225c308e3fc2af22ec8e677d2b533290c4

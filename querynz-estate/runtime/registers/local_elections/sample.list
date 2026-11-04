@@ -1,0 +1,34 @@
+# registers/local_elections/sample.list: hashes and key: lines only. Landed 22 October 2026 by local-elections-1 through
+# the fetch gate (the survey and the first listings pass: daytime, 5 s apart or the crawl delay, none blocked).
+# `key: page <sha256>`: a council returns page; its address is the name the store keeps, its council from listings.tsv.
+# Northland Regional 2025: 21 returns, one per candidate, each under its constituency (an accordion title, a repeated "Candidate declarations" subheading)
+key: page 6700de41d2b5d63188b2f37f375bd56d921505eee99bf36c9e579a00134a6614
+# Northland Regional 2019: 19 returns, the constituency in an h3
+key: page 297b4a3e7992bc0151d3bbff82e437f7fa03ced19a8ccfbdd60dd9d98a93d902
+# Kāpiti Coast 2025: the page calls the election "2026" (the seed year corrects it); the seat in the link words before the name
+key: page 686e7439575eed72e09dda7eb954720a4e1307ffdf7b658d4d0ac842b80fd92f
+# Hutt City 2025: a results table, every link "View return", the name in the row
+key: page a984f41380c70824fbc7de80c2dbbcce882624af5666e287d72ca061865e70be
+# Thames-Coromandel 2022: the link words are the file names
+key: page 00243da80e2bcbc6b9e37332d92216db448670b5fb34abc68088d69308f19160
+# Greater Wellington 2025: every link "Download now (PDF …) get_app", the name only in the address
+key: page 325c026d6ddad60067f2f2ae92a9b094c57d83cfe316cce28b03ffebc8dd5696
+# Waitaki 2019 to 2025: one combined file per ward, board or licensing trust
+key: page 0d79439954f489d2d404ac384d3cd6976aa0589a4c5dafe1db92473acc132c21
+# New Plymouth 2016: every return out of the window (ruling 71), counted and no row
+key: page bbb716a41f1aa79ef1e7c4c0abaff87721aaa3e944f79c80388b8110a817cb05
+# New Plymouth 2025: a results table
+key: page 9ede67eaa66f11376a14a7433ec8ae5963fdb96d3d1d349b3404da551fdf599f
+# Tauranga 2024: the election after the commissioners
+key: page f480be9a12bd6c0fa550f7dc941836632f0c991fcb6b6d0820d62580289fd470
+# `key: terms <sha256>`: a terms page or the Act the position cites (tests/test_local_elections_position.py)
+key: terms 1977eae1d3b7a00d89bed96764108e722fa0057059d927aee1d753fddebbcfa2
+key: terms e58a2ac9d0d3110cce26a2d38ff535fe2b7eedb8c7a87b82540577962123e7e0
+key: terms b340b7079d38dec97b8bc60a3f06218c7f3f50d8a08df3a592c40dae8809fc53
+key: terms ae3f55cef5c5af0111fa2643985a7c1c492fe7c4c3d93f1b36e500b5735f102f
+key: terms 2d7bfc08774288d65fb62ff40e988c5f8bafabdf9d259ffeadbbd212e9273e92
+key: terms da864ef1bdfb613c8d3b80e2d456338d08bbe7d0e16e5208a3049a5456bab4ab
+key: terms 0c6642882174f37cacf68abd7b2f681ad500953a9e51313a1ab75c1e5b041541
+key: terms 11a9ea050cccb9f0bdb2a21ee083caaf8828ec6c32c0c8162471c5042112afd8
+key: terms 4f562426644cb51ff8e00a5c55ed6d4f432233138eaf554988aa0c34cf159d5e
+key: terms 6513a1458c3116085904bc74088f3263b619266014a2e3b05316e118c2cd7bf2

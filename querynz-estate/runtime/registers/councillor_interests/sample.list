@@ -1,0 +1,11 @@
+# registers/councillor_interests/sample.list: hashes and key: lines only. Landed 22 October 2026 by councils-1 through
+# the fetch gate (the survey, daytime, one request at a time).
+# `key: page <sha256> <council>`: a council's register or landing page; its address is the name the store keeps.
+# Invercargill (the structured register: member tables citing section 54E(1); real property and spouse rows withheld),
+# Kāpiti, Tauranga and Hastings (landing pages linking a PDF register or one file per member: recognised as pages).
+key: page cee8191e91ec4612e9e805b20f4dd5c42d49e68371612288d7b85c27fd3cd59c Invercargill City Council
+key: page 297ca39e8f94398224ddd8cb1b4e37a878f27f27c30bcc3f2566814c938e2d3b Kapiti Coast District Council
+key: page c31c96489d00d53d1c60b9a0102867d953dcdb9407be8e04d0f298a0f5a66a72 Tauranga City Council
+key: page c7d60bcbeb1fcb5ce1c9976201ad1d4b1d23371e50727a79c0625f9ab27dd0dd Hastings District Council
+# the Department of Internal Affairs' council list (data.govt.nz council-contact-details), the check's 78
+b6a3c7102ca288c97fe1bad88249587a4b0906b2a198eb9ce841c3c336be011c

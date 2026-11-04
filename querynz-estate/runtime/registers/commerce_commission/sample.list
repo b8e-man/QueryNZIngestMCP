@@ -1,0 +1,22 @@
+# registers/commerce_commission/sample.list: hashes and key: lines only. Landed 21 October 2026 through the fetch gate
+# (a daytime proof of the path: under twenty requests, 5 s apart).
+# The documents about the source (not read as pages): the copyright licence (CC BY 4.0); the disclaimer; the privacy
+# notice; the register's own account of what it publishes and when it names a party
+aebe0cb766ab8834184bc01e54123fd10fe8cd4bee7365ba6f98926260626b58
+51e866a01322238b97417ba570ace3f338f9de28e07e9e4ec018392df64be130
+4ba782d77ad600f2bce148bb99cef2c7d6aee26f0516c48a526b32e0bf64585c
+8cf57526c8fe1d3901b54e2372fb3b5d0c5308e914f42536a6aef3b83cfaf196
+# the listing's first page (:total 1727, 100 cards)
+71fd9feaacfdd34fa1f4b5a037039ed64c06435816d2cc926c1e58867d78e200
+key: listing case-register 71fd9feaacfdd34fa1f4b5a037039ed64c06435816d2cc926c1e58867d78e200
+# entries, `key: item <list> <sha256>` (the slug is the page's own address, from the store): a company with a trading name after 't/a'; a name the Commission
+# withholds ('Withheld'); an open case naming a company and an individual, separated by '; ', under an Act whose title
+# carries 'and'; three parties not separated at all (one row as published, the last split on ' and ' between two legal
+# names); a company and a person separated by '; ', with a judgment for a case number; a 1991 entry with no case number
+key: item case-register 7a856cab217f4c5ac0223742008e78a3754e972888f68669d51503541681c52b
+key: item case-register bd51025bf38c7148cbf0d053c8b652548fe92dd4b1122caaf50d508c83147124
+key: item case-register c666357eaec909a784eb61ef33e3d25ec98a7a7c63fd1b1b3752483189bc6ee6
+key: item case-register 502f2439f2b2b8cc54c2f20772eb677b0c119596313419eaef15ba7c952224c0
+key: item case-register f220adec16b8f0d398fa67d9dd2ee749635663dc8e346142f1ad10f0cbebe31c
+key: item case-register 3ef10244f033fb40c1ab3286728ab6daa661559c98f36a86e13436826a9e4708
+key: item case-register 7563dcb6d8ba06f36ede4df96bf500ac4ede3a87c53e1ec2d0ff09156e0a287e

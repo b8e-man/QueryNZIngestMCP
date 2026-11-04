@@ -1,0 +1,118 @@
+# registers/grants/unprofiled.list: society files the walk landed that are lists of grants in a layout no profile
+# reads yet, by the first 16 hex of their sha256 (a document is its bytes), with the society and the family. Carded in
+# cards/the-societies-own-grants-lists-by-class.md; check.py counts them and is not red on them. A new file in any
+# layout no profile reads has a new hash and turns the check red until it is profiled or listed here.
+94a42d92e81c8e98 air-rescue-services pages are pictures, only the title on the text layer
+2db0fb615cff7ee4 milestone-foundation monthly results in a form the 2018-2020 profile does not match
+b355c4553019adb6 milestone-foundation monthly results in a form the 2018-2020 profile does not match
+223a584fc079c26c milestone-foundation Grant Details for translation 2022-2024, purpose and short description printed
+b5f493be6648ae73 milestone-foundation Grant Details for translation 2022-2024, purpose and short description printed
+266848316d8cfee5 milestone-foundation Grant Details for translation 2022-2024, purpose and short description printed
+e4ea47736cb4adcf milestone-foundation Grant Details for translation 2022-2024, purpose and short description printed
+5d42e9a2c710662f milestone-foundation Grant Details for translation 2022-2024, purpose and short description printed
+538d95970e5078c7 milestone-foundation Grant Details for translation 2022-2024, purpose and short description printed
+48ae4de9c06dbd8c milestone-foundation Grant Details for translation 2022-2024, purpose and short description printed
+b316f28cce171ad8 milestone-foundation Grant Details for translation 2022-2024, purpose and short description printed
+49a79d6a6e6a3916 milestone-foundation Grant Details for translation 2022-2024, purpose and short description printed
+e5eae27931ab9e21 milestone-foundation Grant Details for translation 2022-2024, purpose and short description printed
+cbeda6673c712433 milestone-foundation Grant Details for translation 2022-2024, purpose and short description printed
+6d7c499743dc5901 milestone-foundation Grant Details for translation 2022-2024, purpose and short description printed
+6d4ab22e356d2e68 milestone-foundation Grant Details for translation 2022-2024, purpose and short description printed
+7d8ad23419242e55 milestone-foundation Grant Details for translation 2022-2024, purpose and short description printed
+9eb466a44c76f584 milestone-foundation Grant Details for translation 2022-2024, purpose and short description printed
+80a137eb5240e2be milestone-foundation Grant Details 2020-2022, several head forms
+fb21f7374a44ed6c milestone-foundation Grant Details 2020-2022, several head forms
+a9d00cb62adfd072 milestone-foundation Grant Details 2020-2022, several head forms
+296f835d8367019b milestone-foundation Grant Details 2020-2022, several head forms
+7cc6d30bb3ffadc0 milestone-foundation Grant Details 2020-2022, several head forms
+b53fcc1bb266c44f milestone-foundation Grant Details 2020-2022, several head forms
+c5eaa9f7a76d5169 milestone-foundation Grant Details 2020-2022, several head forms
+199131b20725ff41 milestone-foundation Grant Details 2020-2022, several head forms
+5c63380aeb8cc9c2 milestone-foundation Grant Details 2020-2022, several head forms
+1961743e902347b4 milestone-foundation Grant Details 2020-2022, several head forms
+4229dd98e660b626 milestone-foundation Grant Details 2020-2022, several head forms
+dc6e1dbb9386c41c milestone-foundation Grant Details 2020-2022, several head forms
+74d2df87c4fbcba2 milestone-foundation Grant Details 2020-2022, several head forms
+cbe1ee23fbd9c1f9 milestone-foundation Grant Details 2020-2022, several head forms
+6c781f3c3cd04175 milestone-foundation Grant Details 2020-2022, several head forms
+6698a6f0f979c1aa milestone-foundation Grant Details 2020-2022, several head forms
+e97802174d1f34cc milestone-foundation Grant Details 2020-2022, several head forms
+8113150cfd779f6a milestone-foundation Grant Details 2020-2022, several head forms
+679fc6c383bbdae5 milestone-foundation Grant Details 2020-2022, several head forms
+1089afe221c06fdc milestone-foundation Grant Details 2020-2022, several head forms
+c7fbd5c81278782e milestone-foundation Grant Details 2020-2022, several head forms
+d7dd1032a4263258 milestone-foundation Grant Details 2020-2022, several head forms
+3f30d0eaa0ce9eb2 milestone-foundation Grant Details 2020-2022, several head forms
+6aa16294d93e4965 milestone-foundation Grant Details 2020-2022, several head forms
+7f86834a0be00e58 milestone-foundation Grant Details 2020-2022, several head forms
+31b96dda8ff2e9bd milestone-foundation Grant Details 2020-2022, several head forms
+1f1684af64036c69 milestone-foundation monthly results in a form the 2018-2020 profile does not match
+3f728b29c4c716f2 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+184f2fa4012f6740 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+e1dee14e48b0fdfe milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+4e73eaf604526d89 milestone-foundation monthly results in a form the 2018-2020 profile does not match
+66ed43bfe5240047 milestone-foundation monthly results in a form the 2018-2020 profile does not match
+ce3b10c6751b1de8 milestone-foundation monthly results in a form the 2018-2020 profile does not match
+1f7a0e5676e9b5fc milestone-foundation monthly results in a form the 2018-2020 profile does not match
+0a84017cb559bfdd milestone-foundation monthly results in a form the 2018-2020 profile does not match
+14ea76eeb0de9be0 milestone-foundation monthly results in a form the 2018-2020 profile does not match
+440e6d132b9b0dcd milestone-foundation monthly results in a form the 2018-2020 profile does not match
+1c865cbef7b9efb4 milestone-foundation monthly results in a form the 2018-2020 profile does not match
+cc0d3e0688fb7ffc milestone-foundation monthly results in a form the 2018-2020 profile does not match
+4c60ee68bfa3a549 milestone-foundation monthly results in a form the 2018-2020 profile does not match
+63c6de497d9e3017 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+aea216d008b07197 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+f74a5a917252d2d2 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+5fe45757ae4370b7 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+ddd9b00d04eb8bfc milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+f89b206bdc559d30 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+bd0b5317f3ff898e milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+49f71b2510118ef8 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+e3d46129a5667f88 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+53f50075c6d1ddb3 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+5274dc8f2b43f7f2 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+dd0b16889a51d0e0 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+3f839375c3bbb4bf milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+1ad3d99c8fc73137 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+71d804f7ad49664c milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+d3e8fe4820aff18d milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+e9d99e5396d48cfe milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+bdf40e4fbe044298 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+6c24ad8cbec8be58 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+fa1ded237fba5b06 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+ff1fbf962433c501 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+19a0b16eebe54740 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+059685a6e68a1f6c milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+52a1db10d78684f7 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+0ee56bdddf5cf155 milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+7f3e00d2338b345e milestone-foundation Grant Outcomes 2024-2026, purpose printed; a contact person's name column never to be read
+072a901f02dec0d0 milestone-foundation monthly results in a form the 2018-2020 profile does not match
+c0e11b4698c5cfd6 trust-aoraki A3 sheets 2016-2022, two or three blocks side by side under venue sections
+43a478f9f76179a9 trust-aoraki A3 sheets 2016-2022, two or three blocks side by side under venue sections
+6dc48ad92a53c5e4 trust-aoraki A3 sheets 2016-2022, two or three blocks side by side under venue sections
+a6f109ebd728c7e8 trust-aoraki A3 sheets 2016-2022, two or three blocks side by side under venue sections
+aef3c064cf5c1f69 trust-aoraki A3 sheets 2016-2022, two or three blocks side by side under venue sections
+8afde0c49e8aa6c9 trust-aoraki A3 sheets 2016-2022, two or three blocks side by side under venue sections
+3579f1a693f36ecb trust-aoraki A3 sheets 2016-2022, two or three blocks side by side under venue sections
+52a6c448be844a81 trust-aoraki A3 sheets 2016-2022, two or three blocks side by side under venue sections
+ffe5fba733448cb2 trust-aoraki A3 sheets 2016-2022, two or three blocks side by side under venue sections
+6de409883fa4140d trust-aoraki A3 sheets 2016-2022, two or three blocks side by side under venue sections
+397cc4c9f02253e1 trust-aoraki A3 sheets 2016-2022, two or three blocks side by side under venue sections
+7093a5447c4e0307 trust-aoraki A3 sheets 2016-2022, two or three blocks side by side under venue sections
+9faea76b207321c6 trust-aoraki one-month posters 2024-2025, bullet lists or a designed page
+d4e8d91f494e6d91 trust-aoraki one-month posters 2024-2025, bullet lists or a designed page
+662f01df520331bc trust-aoraki one-month posters 2024-2025, bullet lists or a designed page
+cb887beb5e39d74c trust-aoraki one-month posters 2024-2025, bullet lists or a designed page
+2bcf24058433ffcc trust-aoraki one-month posters 2024-2025, bullet lists or a designed page
+d8a03104a53bae9c trust-aoraki one-month posters 2024-2025, bullet lists or a designed page
+d9a53c0224a0624a trust-aoraki one-month posters 2024-2025, bullet lists or a designed page
+e4b917254b76a42f we-care-community-trust declined lists
+5d12ca35d9630397 we-care-community-trust declined lists
+ad223429d4d45f12 we-care-community-trust declined lists
+0f27a150036f1e5f we-care-community-trust declined lists
+4940284274b62bf0 we-care-community-trust annual approved reports 2023-2025
+07a9309012569391 we-care-community-trust declined lists
+b8fa6b54ede17e34 we-care-community-trust annual approved reports 2023-2025
+9590e94690e33579 we-care-community-trust declined lists
+1cb356533e028a4d we-care-community-trust annual approved reports 2023-2025
+5569e52b8b1c75fd we-care-community-trust declined lists

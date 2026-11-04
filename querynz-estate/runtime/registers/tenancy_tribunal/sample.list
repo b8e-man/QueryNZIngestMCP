@@ -1,0 +1,3 @@
+# registers/tenancy_tribunal/sample.list: hashes and key: lines only. The lane holds no reading yet (step 5), so its
+# tests run on fakes; hashes of captured orders are added when the reader needs a sample.
+key: tenancy_tribunal capture-and-hold

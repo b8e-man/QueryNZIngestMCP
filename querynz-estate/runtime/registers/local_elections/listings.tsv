@@ -1,0 +1,71 @@
+# registers/local_elections/listings.tsv: the survey's result (22 October 2026, survey.md). One line per council page
+# that links its candidates' returns: council<TAB>the in-window election years the page held at the survey (one
+# year: the page's year for every row that does not name its own, so Kāpiti's "2026" heading reads as the 2025
+# election it is)<TAB>the address. Public addresses only; no person's name. Held on their terms and NOT listed:
+# Auckland, Christchurch, South Waikato, Waimakariri (their terms bar automated access), Wellington City (403).
+Bay of Plenty Regional Council	2017	https://www.boprc.govt.nz/your-council/council-and-region/elections/previous-elections-information/
+Central Hawke's Bay District Council	2019,2020,2022	https://www.chbdc.govt.nz/our-council/elections/previous-election-results/
+Clutha District Council	2019,2020,2021	https://www.cluthadc.govt.nz/council/elections/previous-elections
+Dunedin City Council	2019	https://www.dunedin.govt.nz/council/electoral-information/past-election-results/2019-election-results/2019-election-results-dunedin-city-council
+Dunedin City Council	2025	https://www.dunedin.govt.nz/council/electoral-information/2025-election-results
+Far North District Council	2022	https://www.fndc.govt.nz/Council/Local-Elections/previous-elections/local-elections-2022
+Far North District Council	2025	https://www.fndc.govt.nz/Council/local-elections/Local-Elections-2025/election-results-2025
+Gisborne District Council	2022	https://www.gdc.govt.nz/council/mayor-and-councillors/Local-body-elections/2022-local-elections
+Gore District Council	2022,2023,2025	https://www.goredc.govt.nz/council/elections/electoral-donation-and-expenses
+Greater Wellington Regional Council	2025	https://www.gw.govt.nz/your-council/elections/2025-election-results-and-returns/
+Hamilton City Council	2019,2022,2024,2025	https://hamilton.govt.nz/your-council/elections-and-representations/past-elections
+Hastings District Council	2017,2019,2022,2025,2026	https://www.hastingsdc.govt.nz/our-council/elections/electoral-donations-and-expenses-returns/
+Hawke's Bay Regional Council	2019,2022,2025	https://www.hbrc.govt.nz/our-council/local-elections-2022/results-2
+Hawke's Bay Regional Council	2019,2022,2025	https://www.hbrc.govt.nz/our-council/local-elections/election-results/
+Horizons Regional Council	2019,2022,2025	https://www.horizons.govt.nz/your-council/elections
+Horowhenua District Council		https://www.horowhenua.govt.nz/Council/Participate/Elections/Past-Local-Elections
+Horowhenua District Council	2022	https://www.horowhenua.govt.nz/Council/Participate/Elections/Electoral-Expenses-Donations-for-2022-Local-Elections
+Hutt City Council	2019	https://www.huttcity.govt.nz/council/elections/past-elections/2019-local-government-elections
+Hutt City Council	2022	https://www.huttcity.govt.nz/council/elections/past-elections/2022-local-government-elections/2022-election-results
+Hutt City Council	2025	https://www.huttcity.govt.nz/council/elections/2025-local-government-elections/2025-election-results
+Kaikōura District Council	2022,2025	https://www.kaikoura.govt.nz/council/elections/kdc-representation-review
+Kaipara District Council	2022	https://www.kaipara.govt.nz/council/local-elections/local-elections-2022
+Kawerau District Council	2022,2025	https://www.kaweraudc.govt.nz/te-kowhiringa-poti-2025-local-elections-2025/past-election-results-and-expense-forms
+Kāpiti Coast District Council	2019	https://www.kapiticoast.govt.nz/council/about/local-elections/past-elections/elections2019/final-results/expense-returns/
+Kāpiti Coast District Council	2025	https://www.kapiticoast.govt.nz/council/about/local-elections/local-elections-2025/final-election-results/2026-election-candidates-declaration-of-expenses/
+Manawatū District Council	2025	https://www.mdc.govt.nz/council/elections-and-voting/election-expense-returns
+Marlborough District Council		https://www.marlborough.govt.nz/your-council/elections/2022-council-election
+Marlborough District Council		https://www.marlborough.govt.nz/your-council/elections/2025-council-election/2025-election-results
+Napier City Council	2019,2022,2025	https://www.napier.govt.nz/our-council/local-elections/electoral-donations-and-expenses-returns/
+Nelson City Council	2019	https://www.nelson.govt.nz/council/elections/previous-elections/elections-2019/nelson-city-council-2019-triennial-elections-final-result/
+Nelson City Council	2022	https://www.nelson.govt.nz/council/elections/results-for-the-2022-nelson-city-council-election/
+New Plymouth District Council	2022	https://www.npdc.govt.nz/council/about-the-council/elections/previous-elections-including-expense-returns/election-results-and-expenses-2022/
+New Plymouth District Council	2025	https://www.npdc.govt.nz/council/about-the-council/elections/election-results-and-expenses-2025/
+Northland Regional Council	2019	https://www.nrc.govt.nz/your-council/elected-members/elections/past-elections/2019-local-elections/2019-electoral-donations-and-expenses/
+Northland Regional Council	2022	https://www.nrc.govt.nz/your-council/elected-members/elections/past-elections/2022-local-elections/electoral-donations-and-expenses-2022/
+Northland Regional Council	2025	https://www.nrc.govt.nz/your-council/elected-members/elections/2025-local-elections/electoral-donations-and-expenses-2025/
+Otago Regional Council	2022	https://www.orc.govt.nz/your-council/local-body-elections/2022-elections/
+Otago Regional Council	2025	https://www.orc.govt.nz/your-council/local-body-elections/2025-elections
+Palmerston North City Council	2019,2021,2025	https://www.pncc.govt.nz/Elections/Election-donations-and-expenses
+Rangitīkei District Council	2022,2024,2025	https://www.rangitikei.govt.nz/council/elections/candidate-donations-expenses-returns
+Rotorua Lakes Council	2019	https://www.rotorualakescouncil.nz/our-council/local-elections/previous-elections/elections-2019
+Rotorua Lakes Council	2022	https://www.rotorualakescouncil.nz/our-council/local-elections/previous-elections/elections-2022
+Selwyn District Council	2025	https://www.selwyn.govt.nz/your-council/elections/2025-election-results
+South Wairarapa District Council	2019,2022,2025,2026	https://swdc.govt.nz/governance/representation-and-elections/
+South Wairarapa District Council	2026	https://swdc.govt.nz/featherston-by-election-2026/
+Taranaki Regional Council	2025	https://www.trc.govt.nz/council/council-and-region/2025-local-elections-results
+Taupō District Council		https://www.taupodc.govt.nz/council/elections
+Taupō District Council		https://www.taupodc.govt.nz/council/elections/past-elections/elections-2019
+Tauranga City Council	2024	https://www.tauranga.govt.nz/Council/How-the-council-works/Elections/Elections-2024/Candidate-electoral-expenses
+Tauranga City Council	2024	https://www.tauranga.govt.nz/council/about-your-council/elections/candidate-electoral-expenses
+Thames-Coromandel District Council		https://www.tcdc.govt.nz/Our-Council/About-our-Council/Elections/Local-Elections-2025/
+Thames-Coromandel District Council	2022	https://www.tcdc.govt.nz/Our-Council/About-our-Council/Elections/2022-Election-Information/2022-Electoral-Donations-and-Expenses
+Waimate District Council	2022	https://www.waimatedc.govt.nz/council/elections/a-elections-2022
+Waipā District Council	2019,2022,2023	https://www.waipadc.govt.nz/our-council/election/returns-for-expenses-and-donations
+Wairoa District Council	2019	https://www.wairoadc.govt.nz/our-council/elections/election-results-2/2019-election-results-and-expenses/
+Wairoa District Council	2022	https://www.wairoadc.govt.nz/our-council/elections/election-results-2/2022-election-results-and-expenses/
+Wairoa District Council	2022,2025	https://www.wairoadc.govt.nz/our-council/elections/election-results-2/2025-election-results-and-expenses/
+Waitaki District Council	2019,2022,2025	https://www.waitaki.govt.nz/Council/Elections/Candidate-donations-and-expense-returns
+Waitomo District Council	2022	https://www.waitomo.govt.nz/council/triennial-elections/local-elections-2022/
+Waitomo District Council	2025	https://www.waitomo.govt.nz/council/triennial-elections/local-elections-2025/
+West Coast Regional Council	2022,2025	https://www.wcrc.govt.nz/council/elections/return-of-electoral-donations-and-expenses
+Whakatāne District Council		https://www.whakatane.govt.nz/about-council/governance/te-kowhiringa-poti-2022-local-elections-2022
+Whakatāne District Council	2025	https://www.whakatane.govt.nz/about-council/governance/local-elections-2025
+Whanganui District Council	2019	https://www.whanganui.govt.nz/Your-Council/Elections/Election-2019/Declarations-of-Donations-and-Expenses
+Whanganui District Council	2025	https://www.whanganui.govt.nz/Your-Council/Local-Elections
+Ōtorohanga District Council	2019,2020,2021,2022,2025	https://www.otodc.govt.nz/about-council/elections/returns-for-expenses-and-donations

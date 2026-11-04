@@ -1,0 +1,28 @@
+# registers/fma/sample.list: hashes and key: lines only. Landed 21 October 2026 through the fetch gate (a daytime
+# proof of the path: under thirty requests, 5 s apart; the enforcement list's pass resumed at its second page).
+# The documents about the source (not read as pages): the copyright licence (CC BY 4.0), twice; the privacy statement
+264eb6fbb03af92da1b00edefbf21dd3a8720e2f98985f1cf94d7d54c14f10ce
+10229597007b8ddc730a27d3aab866675396da440f3d48af76d85e7ec2343c85
+66172f0e1eaafe98eb6be18543c3938f2d433e7c39646f97e0000aa6bc22dd85
+# listing pages: warnings page 1 (726 results found); enforcement pages 1 and 2 (99); the oldest warnings (start=720)
+key: listing warnings 41e88d6876d721c83fbb254f4448090197dd85ba09a7567a2d9965e593320c65
+key: listing enforcement 4ae4e8c01c1093758e22ba9127afd8689e1e64e8713feda57937104ececc749e
+key: listing enforcement 40757405c907231c8b1704e9837cd1e57669e58fb4fec1a6c977e3e72565c0bb
+key: listing warnings 5805066feaf398b47d4e7da8b13a1219e2bb47bb43672f87012a432b8e3070e3
+# warnings, `key: item <list> <sha256>` (the slug is the page's own address, from the store): an Entity Name field with an NZBN printed beside it; a company and a
+# person in one heading before its dash; topic alerts naming nobody; a heading with a parenthesis before its dash;
+# 2010 warnings headed by the entity's name alone, under the Securities Act 1978
+key: item warnings dfa61d31de562e1825176adb33bbf5a6b83ecacfafb9b2637ac7dde49df51da0
+key: item warnings 3a7c75ce496f10525dfa49e11d5c38e3ab929990538535e94619c438c33aa247
+key: item warnings 0d9c42eb78c088e3656e451730a5bbb2836c0b6bea4788700474a7f3ad685e70
+key: item warnings de8b94e72b15e7d76923992523adf1bbc41a28b31370088b0cb87b94f86b702d
+key: item warnings 7d75ca0b17e61396b5d8a9ed5a1565d2d74839a4cfd4d6f81a50ecda1bae1759
+key: item warnings 89cbd16812ed1e5e946c3075591c7588ab79ad6606d67731bde15d1ad844b53a
+key: item warnings f8cb3ac212eb160b626d111089a5fb3c19fa27a86df40fe2354dea3e1bcd272c
+key: item warnings 97560f91579ae03f48670a36f255b8adf0ca53fecc8683d3274d32e174b1856a
+# enforcement cases: a timeline dated by day; a timeline dated by month, naming a person; a trading name in the
+# heading; a long case with a yearless and a dated Act title
+key: item enforcement 2c9d83104cb417a1071fcf647756f5cc4ba5a57be613b2aa164dac9f0a808a3a
+key: item enforcement ef4b793f7f5bdd7e312be4cf6ea1e46e5ba05a990c1871586144c3791572c623
+key: item enforcement 0f0f309f4ad23de88667116fc648b79c23d8ba92c15060f13ee5db3eeaf49fb3
+key: item enforcement 752a118c00b492c5f22facba41eee1b2abc1c39f4c77832684d3e5f2e85c198d

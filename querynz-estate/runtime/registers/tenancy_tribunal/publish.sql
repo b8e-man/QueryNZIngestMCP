@@ -1,0 +1,4 @@
+-- registers/tenancy_tribunal: nothing published (track E: capture and hold; the reading comes in step 5).
+-- The orders name tenants and landlords and the tenancy address is a home address: both are kept whole in
+-- tenancy_tribunal_private.listing_rows (ruling 143); no view is made until a reading exists and Arthur rules on what
+-- may be shown.

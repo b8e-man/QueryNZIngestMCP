@@ -1,0 +1,17 @@
+# registers/disclosures/sample.list (plan 1b.6): hashes only, never bytes or rows. Comments say what case a file proves, never whose it is.
+# The two listings as the old ec-disclosures job held them on 19 October 2026 (03:32).
+a6a42ed47bbf742fe71b554e7eab0a105855f08081b3d4403cdabfe1bea0b89f listing: over $20,000 from 2023 (276 declarations, ten amendment notes, two returned gifts)
+7f67fd0f1ffa1ff52f6e5b07ff78a8959e4619e9877b2d05d9ac9562450ef03c listing: over $30,000 2011-2022 and over $20,000 2008-2010 (244 declarations, inline amendments)
+# Scanned declarations: the join's cases.
+e801e8673e6130a7df2d2ec5407f518a3fa47ec4de738d7899fa25fa73457164 one document held under two names (2023), linked by the table
+3ed51c23648300e9cb166482f364c2822edb66df81f13e1e1253a5e7103ec177 a photograph (.jpg) the table links (2023)
+0abffb918683ede0e84b249578828b529b49cf066635c2612d6876d0e24e41b4 a photograph (.jpg) the table links, one declaration of two gifts (2023)
+5682e7a230fcc29414701f42557e644376c847f50f249e352bd002be21131208 a PDF the table links (2023)
+d325a2d5e28d8f5fa1a006603da8a9d4cae6d07af52a975b31dff9e7be6b4e29 linked behind a stray empty link to another declaration (2023): the frozen site counts it twice
+99c44db8b5a19f9dc129d190e9bd2c3bbea209a35e7b1e722bae715ca7c547e6 held, not linked by the table (2023): the withdrawn amendment
+d417f542b207fbe1608ee94131c2c3cac488e182f24e596133280ae4a161b845 from the archive tree, its prefix on the name (2026)
+8070494245f8696b07303825d4276e9fef1b55d5e2412bd473cec1d013598cfa from the archive tree (2026), a stored GLM-OCR reading
+# Ruling 66, in the 2011-2022 listing above (keys, not new documents): the itemised gifts against the printed amount.
+key: ec-listing/2009-01-07/33dc6812f2c6 reconciled with an issue: the 8 gifts add to $0.16 more than the amount (the largest admitted)
+key: ec-listing/2011-05-30/53f80f958886 stays unreconciled, the nearest above $100: the gifts add to $500.00 less
+key: ec-listing/2008-06-27/c1a6dbb92d34 stays unreconciled: the gifts add to $999.90 less

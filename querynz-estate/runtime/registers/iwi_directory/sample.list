@@ -1,0 +1,62 @@
+# registers/iwi_directory/sample.list: hashes and key: lines only. Landed 22 October 2026 by settlements-1 through
+# the fetch gate (the survey: about fifty requests, 5 s apart, daytime, none blocked or challenged).
+# `key: page <sha256>`: a page of www.tkm.govt.nz; its address is the name the store keeps. Iwi pages: Maniapoto (seven
+# rohe tables, one governance entity), Ngāi Tahu, Ngāpuhi (no settlement), Ngāti Kahungunu (eight organisations, RMA
+# hapū groups), Ahuriri Hapū (a deed signed, no Act), Moriori (no hapū column), Te Whānau a Apanui (a mandate, an
+# agreement in principle), Ngāti Whātua o Ōrākei, Waitaha (no hapū column), Ngāti Pikiao (three settlements, one
+# collective); the 13 region maps; two authority lists; the other organisations and non-tribal marae pages; site pages.
+key: page cb73727189c19fbdd587bf9b2300fea5defd6b67be28e8ad48b789595b80ee07
+key: page aecb2d96b871b1d03e0fa26402da1ea4f1826d289aaf70f1137eee3046a64770
+key: page 9a191ca64cfad9a0e8b8a7ed8a7d84c328899242d03661f2b3a18310a9d5663a
+key: page cec7bdafd0606cebc61177c7a04d2b0a885597a249f6085603a38faa66dee97d
+key: page 6c3d13e50aefc45c5f1c113671811ff2bde7acad8847bd2024461368ec529279
+key: page 050687f6296121c90ac33bf3643c7dd63a3bcbc5dab71fbc3744ea75dc869ed8
+key: page 678a9ff67e193cce9411ae44283ab230615abe73bb8d918e31b22cf739e68f6a
+key: page 687baa08a2d6fe4a5c6c17d8634dbf58502c01c25e5a1d9d019a07ff961d096c
+key: page c3f394c436adb4029ee1f6fb331c2c3fe440c5f369608abd148bbae4b52de4aa
+key: page 52153afc235f77fae55536a2e2d0649c3a8744ab01a14b1c47ad295f7260e026
+key: page f46d818ad8000279ff884c8e99f4d456feae78dc5b12de7f75e0619b444094c4
+key: page b9c85c1a1c4003e6ff30d5c8f2c82675d04731ce496d60809ccf55f49423e15d
+key: page 47d080dd0c7989914b2e0555bf5aba09213eb3c70a245ed98b1b5ec3c79a6dd7
+key: page 1ae6e222d95ad0b13de21650506e833b0d89d479c9dc69c9966d21b8987450bc
+key: page 443af3fe96fd5eadc54dde991d9004a835239e276f44166c7f117153439c81db
+key: page 2477d3c738c23c677a3e13da326192dfcbc5eacbf6e782af44d66db6c0c845e8
+key: page d03dd928a1e40e66c4faa8840ed4a717cfecbe95642cc531fb0683a35368a567
+key: page 6f88a261bed3f65a0453d97d0eaeb192a8cf44f004ef2417775630180f864e8b
+key: page f93bca0f852afbd519a7e54111e430c9360f69c49225c4fd2290361bee164614
+key: page d64f316aafe9f09ec6542a2b98ac4a07d38f288f8c9a2e7459a503246b4a7f80
+key: page 149c8bf0004848465dba6e62984e85fe0e94e70709efb217ebe34a7b4f4a91d1
+key: page 3eebcece9be0f002cebde3b715145a334a070175eb194aa6745c3eeffac4487d
+key: page 74031896dfd99a44989fbe0e2d936597b8a310e5c480748b1ef091e3139e7c70
+key: page f9a11d6c4a3e69d2333cbe7e6356c0702e11a4a3333f54cdf8e2f3bf2e0103eb
+key: page 079dc41869d32a3c7a775215fba0f35b0d48ef186cf3d4c1efa64263c6e88c4c
+key: page 2db684bc42092e0e8a3e62bce0d07cdb9734343981b97fcbdc9df7b205321756
+key: page d224e3f5190d5087144351e64d12b3658053d5211e5e7b18bce4458c88311232
+key: page 2eff98a8a1bc8c5d61ebe4a6541d65241c614d5afc333220b9248f7ec4703196
+key: page db2ba22826d83eb30a0bca323182be099e9dbf0f813aaf8111794a09ae534da2
+key: page 5738a46a2a7705409a5f470c0eb7f20f22255f9dbb7321edbf82a33ea363fd38
+key: page a8bb358db329719530b37c6aa088e403938a8c2d4a2815e1dbd5e85e2d8bf97a
+key: page b48adbffadf2bfcb414f70e67ce511c8d0bff6efc9371c99864cd840e0cbd450
+key: page 52ff86d31237dc2fc2dd8c99eb7541d242a6ead04e8464e4581a709a3c3c435a
+key: page 2aade22e192613f64a4b3527c0c1b939f61d7c08bdd93e66ae507f77d5c4ffd3
+key: page b89276de45de04ed507fde035769be4b58d6c319d587ab7f39767985ad0db967
+key: page 3e38e16a8bc65464ba9453e7ae7dcb22d3f250dfd62228c2a45a3c98977da6d5
+# the position's evidence that is not a page of the site: the government data catalogue's record of the directory
+# (CC-BY-NZ-3.0, published by the Ministry of Māori Development)
+3377b9be327a89e60729f784ec568aee007d1d6d00cc88ff9a6223a113bb82ae
+# Added 23 October 2026 by fix-registers-iwi-directory-1, from the first full walk (22 October): Taranaki (the
+# maunga_blue_sm flag, Ngā Iwi o Taranaki), Muaupoko (a list of hapū alone, its marae in a table beside it), Ngāti Apa
+# (Hapū | Marae | Location, no wharenui; "Not yet identified" marae), Ngāti Mutunga o Wharekauri (Marae | Location;
+# a website entry that is email addresses).
+key: page bee89394f5033f5ccd2f72ed0a83ab97adce8cb442e0605f827209e528be9d98
+key: page 23cd4a1572d29c850806349b1ce2fc496b1689dee002bf7ae617fbce19254f4b
+key: page 112dcd57b7d48b7b1a78f31e9550aa4bcd54403f06c4beaad3fb08e14121473c
+key: page fda283ee80c0c26d4c722911b23bec484f14af0156b9f61411f48750881b3c96
+# Added 23 October 2026 by the second fix-registers-iwi-directory-1 (cards a-settlement-key-names-several-rows and
+# the-iwi-directory-key-folds-two-bodies-into-one): Ngāti Hako (the post-settlement flag with no settlement beside it,
+# and a mandate).
+key: page a1e5a7959c9e70767a9f27e4c3bfff03681c5b7a4b1aacdaf9dc443a9fcad942
+# Ngāti Hāua (Upper Whanganui) and Ngāti Hauā (Waikato): Ngāti Hāua Iwi Trust and Ngāti Hauā Iwi Trust, two bodies
+# whose names fold to one key (the macrons tell them apart).
+key: page 53c9af4aecf87d8276321b446d6ba9fd764fa86b49bef4fbd9f9762052dcdf5a
+key: page 5c4d374d67040c732e05d905e44973c34b253deed2e8f2b9590f450b3906677b

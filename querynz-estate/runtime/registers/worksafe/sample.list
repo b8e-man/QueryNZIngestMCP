@@ -1,0 +1,24 @@
+# registers/worksafe/sample.list: hashes and key: lines only. Landed 21 October 2026 through the fetch gate (a daytime
+# proof of the path: under twenty requests, 5 s apart; the undertakings' pass resumed at its second page).
+# The documents about the source (not read as pages): the copyright statement; the privacy statement
+331764a0a0049ff29ff331581ab5135c53372b1d32e7a4f479c962aa1c8f33ec
+259dceab4643a44654848d5c0d1f63fde32258295a385ee97d54d6d2cbf933d0
+# listing pages: court summaries page 1 (Found 608 results); undertakings pages 1 and 2 (62)
+key: listing prosecutions 625e768ceb6ff0a7f7190fbcc229e38d1c0d7d8b396774719264266ace04fa25
+key: listing undertakings f2769439c54aadc857b29aa19bff71f8fff14886b95aa26fb15ce73dc82c6086
+key: listing undertakings 6391e450cbae44ed2ff9dd702a03505e3a6eea69ce355887b34ce36286c523ab
+# court summaries, `key: item <list> <sha256>` (the slug is the page's own address, from the store): a 2017 summary under the 1992 Act with two offence lines; joint
+# defendants split on ' and ' between two legal names, the fine split between them (no one figure); a fine stated as a
+# starting point and a discount; a fine reduced for incapacity; a fine by instalments; a defendant WorkSafe publishes
+# as a code ('2019-A') in place of its name
+key: item prosecutions 5e80e58616eb0a320e80bc937580f49c892e95a14a1357cf687d3f0b05a91ed6
+key: item prosecutions af5f01fcbb3fffe4846286f6c8472dbf37b88e3532c71f5934cc80f583926518
+key: item prosecutions d278c5aab2e330c532aa046d191542695a66c081bbffc1529c0e90f39d6aa0af
+key: item prosecutions c395a731e9aa3c37750b94b785748cff5385f1e420cafc201f8beb1cf7aca293
+key: item prosecutions 88b39c63abd4c8a049402aae15706fa61e55b977b479ef3c4d660ccd268c7124
+key: item prosecutions d573d5289899544f145a519f209523b80abf3fe90bd9d8814bcdd1a99462f0bc
+# undertakings: in progress, one stating its sections in the alleged contravention
+key: item undertakings 7dcd8d1e1f43512442508ebdfd76dc37d16ca7c2b333f50bb5aa26997252ed0c
+key: item undertakings 84494f20eb3610f1ab68882a4e8271c5ee71946a40586f4071a5e787d83f6d7f
+key: item undertakings 6eaa375ee1a69617b7733462798c51f1c32b6c76a3dee3457fdb6254e8787a61
+key: item undertakings b6e8c521a23a4b58fd51b6232ab967d8d74cb08a0935d96db093e464ff5b7944

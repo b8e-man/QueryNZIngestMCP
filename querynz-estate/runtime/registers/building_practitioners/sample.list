@@ -1,0 +1,35 @@
+# registers/building_practitioners/sample.list: hashes and key: lines only. Landed 21 October 2026 through the fetch
+# gate (a proof of the path: the documents about the source and the first four pages of the Board's decisions list).
+# The documents about the source (the capture's cases, not read as pages): the copyright grant; the privacy statement;
+# the register's search page with its statement of s 307
+e2428967a82fe3120a684a44fe3b9325a403d6916203ed4af1c6b75d74c065ba
+7366101ca4ce3590789b62c5754ed520bf855b49613ef8a1b7e1ea01bad4dbb3
+4c50071e28682116a7124dec3dd7e2d4055a70bc7f44ef03a7bf8fb73e3f1021
+# list page 1 (start 0): a decision the Board published [OMITTED] with a permanent suppression direction in its
+# summary (CB26816); a title with no kind (CB26862); a complaint with a penalty decision and a reissue (CB26758);
+# a licence class written "Carpentry," with its comma
+ee0d55f91a8210bf3d53131296e132ca3f124bdca7ecd8c6f8a5a30d84884fb7
+key: page ee0d55f91a8210bf3d53131296e132ca3f124bdca7ecd8c6f8a5a30d84884fb7 1
+# list pages 2 to 4 (start 20, 40, 60): older titles that write the number with its prefix ("BPB CB26720")
+0219227c22ea7224bc42654e990f4ce227cf8da4ac5df98669a976ee33daecb3
+key: page 0219227c22ea7224bc42654e990f4ce227cf8da4ac5df98669a976ee33daecb3 2
+786ba1b3d72e5378c932bdf37c62b65e866fb514ff777c306aa56afaf6d158e6
+key: page 786ba1b3d72e5378c932bdf37c62b65e866fb514ff777c306aa56afaf6d158e6 3
+396d1b5a7edfb27b36dcf3de85e319abe3286ff7a5f6332f18bcb5b02f820a7d
+key: page 396d1b5a7edfb27b36dcf3de85e319abe3286ff7a5f6332f18bcb5b02f820a7d 4
+# the register (ruling 132), landed 2 November 2026 by register.py into a session's scratch record: one search page
+# (area of practice Site 1, 1,371 rows) and six practitioners' pages it lists
+key: reglist 057ad189a40ab1e1e61101feeb336febea39b8463ffacc4f27ad5077910429e9
+057ad189a40ab1e1e61101feeb336febea39b8463ffacc4f27ad5077910429e9
+key: regdetail 3c405fb0f1c956ca235be91d095e04aebb00e32887701a38a88eb328ba02339a
+3c405fb0f1c956ca235be91d095e04aebb00e32887701a38a88eb328ba02339a
+key: regdetail 8f937c2f767caf0ee9c1ab7eb1a15fa335d68f7fed75790c5a1603e4ec9ffebb
+8f937c2f767caf0ee9c1ab7eb1a15fa335d68f7fed75790c5a1603e4ec9ffebb
+key: regdetail cc01f85caa55f0c9cc0feffb55bbc703241444eb5a704b422c61b15ae0ee6ed3
+cc01f85caa55f0c9cc0feffb55bbc703241444eb5a704b422c61b15ae0ee6ed3
+key: regdetail ef9947960001ebc4d4b76cf21734792ab7042281a6934e43d1e92f02820b9ba2
+ef9947960001ebc4d4b76cf21734792ab7042281a6934e43d1e92f02820b9ba2
+key: regdetail 05f535df85e118a210095248b913abf2ab2faa556d8b4473285263f0b4dfe0ee
+05f535df85e118a210095248b913abf2ab2faa556d8b4473285263f0b4dfe0ee
+key: regdetail 2b51857577f08973e5114a9029e35d06f6abaa602abb5527021b97a96877c118
+2b51857577f08973e5114a9029e35d06f6abaa602abb5527021b97a96877c118
