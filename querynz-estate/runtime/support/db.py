@@ -43,6 +43,31 @@ _IDX_ON = re.compile(
 _FK_QUAL = re.compile(r"REFERENCES [A-Za-z_]\w*\.")
 _ADDCOL = re.compile(r"ADD COLUMN IF NOT EXISTS", re.I)
 _ARRAYT = re.compile(r"\bARRAY\s*<[^>]*>", re.I)
+_NAMEPAT = re.compile(r"%\((\w+)\)s")
+
+
+def _fix_conflict(t: str) -> str:
+    """Strip sqlglot's NULLS LAST/FIRST out of ON CONFLICT target lists."""
+    return re.sub(
+        r"ON CONFLICT\s*\(([^)]*)\)",
+        lambda m: "ON CONFLICT ("
+        + re.sub(r"\s+NULLS (?:LAST|FIRST)", "", m.group(1), flags=re.I) + ")",
+        t, flags=re.I)
+
+
+def _sql_literal(v) -> str:
+    """A psycopg2-style client-side literal for %(name)s interpolation."""
+    if v is None:
+        return "NULL"
+    if isinstance(v, bool):
+        return "TRUE" if v else "FALSE"
+    if isinstance(v, (int, float)):
+        return str(v)
+    if isinstance(v, (list, tuple, set)):
+        return "(" + ",".join(_sql_literal(x) for x in v) + ")"
+    if isinstance(v, (dt.datetime, dt.date)):
+        v = v.isoformat()
+    return "'" + str(v).replace("'", "''") + "'"
 
 
 def _adapt_datetime(v):
@@ -90,7 +115,7 @@ for _t in ("boolean", "bool", "BOOLEAN", "BOOL"):
 
 def _regexp(pattern, value):
     if value is None:
-        return 0
+        return None        # NULL REGEXP ... is NULL: CHECK passes, as in PG
     try:
         return 1 if re.search(pattern, str(value)) else 0
     except re.error:
@@ -248,6 +273,11 @@ class Conn:
         sql = sql.strip()
         if not sql:
             return []
+        if isinstance(params, dict):
+            # psycopg2 dict style: the driver interpolates client-side
+            sql = _NAMEPAT.sub(lambda m: _sql_literal(params.get(m.group(1))), sql)
+            sql = sql.replace("%%", "%")
+            params = None
         params = list(params) if params is not None else None
         if params:
             params = [json.dumps(p) if isinstance(p, (list, tuple, set)) else p
@@ -272,6 +302,7 @@ class Conn:
             t = _FK_QUAL.sub("REFERENCES ", t)
             t = _ADDCOL.sub("ADD COLUMN", t)
             t = _ARRAYT.sub("TEXT", t)
+            t = _fix_conflict(t)
             t = _ANY.sub("IN (SELECT value FROM json_each(?))", t)
             t = _SERIAL_PK.sub(r"\1 INTEGER PRIMARY KEY", t)
             out.append(t)

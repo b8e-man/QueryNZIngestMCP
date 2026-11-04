@@ -38,7 +38,9 @@ ENV = dict(os.environ,
            QV4_DOCS=os.environ.get("QV4_DOCS") or "/opt/data/querynz-estate/store",
            QV4_SOURCES=os.environ.get("QV4_SOURCES") or "/opt/data/querynz-estate/sources",
            QV4_POSITIONS=os.environ.get("QV4_POSITIONS")
-           or os.path.join(HERE, "docs", "legal", "positions"))
+           or os.path.join(HERE, "docs", "legal", "positions"),
+           DISPLAY=os.environ.get("DISPLAY") or ":99",
+           PLAYWRIGHT_BROWSERS_PATH="/opt/data/.cache/ms-playwright")
 
 #: the handover's capture jobs, in firing order. The courts lane covers
 #: sources courts-jdo + courts-finder (--jdo) and courts-era (--era); the
@@ -59,6 +61,7 @@ WANTED = [
     "qv4-charities-capture",
     "qv4-worksafe-capture",
     "qv4-settlement-commitments-watch",
+    "qv4-council-procurement-watch",
     "qv4-councillor-interests-capture",
     "qv4-iwi-directory-capture",
 ]
@@ -78,6 +81,18 @@ def load_jobs():
         if isinstance(times, str):
             times = [times]
         out[name] = {"command": j.get("command"), "at_utc": list(times or [])}
+    # the elections.nz lanes: the estate's v4 code only adopted its old
+    # browser's downloads; this is the live headed-browser walk
+    # (elections_nz.py, Arthur 2026-11-05: "let's get them all. just take
+    # it easy if they refuse")
+    out["local-candidate-returns"] = {
+        "command": ["python", "elections_nz.py", "--lane", "candidate_returns",
+                    "--budget-s", "3600"],
+        "at_utc": ["09:40"]}
+    out["local-disclosures"] = {
+        "command": ["python", "elections_nz.py", "--lane", "disclosures",
+                    "--budget-s", "3600"],
+        "at_utc": ["09:45"]}
     return out
 
 

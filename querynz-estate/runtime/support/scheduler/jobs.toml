@@ -1214,7 +1214,7 @@ priority = 76
 command = ["python", "-m", "registers.council_procurement.capture"]
 at_utc = "09:50"
 nice = 10
-enabled = false   # ruling 136 (3 November 2026): the councils' own award lists are stored, off every schedule, lowest priority
+enabled = true    # ruling 136 lifted by Arthur 2026-11-05 ("let's get them all. just take it easy if they refuse")
 
 # ── step 6.3, the councils lanes (councils-1). The clock is NZDT (UTC+13) until 5 April 2027. ──
 [jobs.qv4-council-minutes-capture]
