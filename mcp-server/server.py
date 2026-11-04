@@ -1033,6 +1033,116 @@ def gaps(series: str | None = None, sample: int = 15) -> dict:
     }
 
 
+
+# ---------------------------------------------------------------------------
+# Pipeline telemetry: what the gathering process is DOING — per-lane work
+# items queued/done, targets and 24h rates, plus recorded discrepancies.
+# Facts and counts only. A blocked lane reports status "blocked" and nothing
+# else. Config lives in pipeline.yaml and is re-read on every call, so lane
+# edits land without a server restart. All counts are computed live from the
+# pipelines' own queue/manifest/state files at call time — nothing cached.
+# ---------------------------------------------------------------------------
+
+PIPELINE_CFG = os.path.join(BASE, "pipeline.yaml")
+
+
+def _pl_lines(path: str) -> int:
+    try:
+        with open(path, "rb") as f:
+            return sum(1 for _ in f)
+    except OSError:
+        return 0
+
+
+def _pl_lines_list(paths) -> int:
+    if isinstance(paths, str):
+        paths = [paths]
+    return sum(_pl_lines(p) for p in paths)
+
+
+def _pl_ts_count(path: str, field: str, cutoff: str) -> int:
+    """Count rows whose ISO `field` timestamp is >= cutoff (string compare
+    after Z -> +00:00 normalisation; both sides are UTC)."""
+    pat = re.compile('"' + re.escape(field) + '"\\s*:\\s*"([^"]+)"')
+    n = 0
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                m = pat.search(line)
+                if m and m.group(1).replace("Z", "+00:00") >= cutoff:
+                    n += 1
+    except OSError:
+        pass
+    return n
+
+
+def _pl_target(spec):
+    """target: int, or {json: file, key: dotted.path} read live."""
+    if isinstance(spec, dict):
+        try:
+            v = json.load(open(spec["json"]))
+            for k in spec["key"].split("."):
+                v = v[k]
+            return int(v)
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+    return spec if isinstance(spec, int) else None
+
+
+@mcp.tool()
+def pipeline() -> dict:
+    """MEASUREMENT (gathering process). What the capture pipelines are doing
+    right now, per lane: work items still queued, work items completed, the
+    target where the source publishes one, and the completion rate over the
+    last 24 hours — plus the recorded discrepancy list (measured differences
+    between what the sources report and what is held). Telemetry about the
+    data-gathering process itself, not the corpus contents (see `corpora` for
+    what the database holds). A blocked lane reports `status: blocked` and
+    nothing else. All numbers are computed live from the pipelines' own
+    queue/manifest files on every call; lane list is pipeline.yaml."""
+    t0 = time.time()
+    cfg = yaml.safe_load(open(PIPELINE_CFG))
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(
+        timespec="seconds")
+    out = []
+    for lane in cfg.get("lanes", []):
+        status = lane.get("status", "active")
+        if status == "blocked":
+            out.append({"name": lane.get("name"), "label": lane.get("label"),
+                        "status": "blocked"})
+            continue
+        item = {"name": lane.get("name"), "label": lane.get("label"),
+                "status": status}
+        if lane.get("corpus"):
+            item["corpus"] = lane["corpus"]
+        done = _pl_lines(lane["done_file"]) if lane.get("done_file") else 0
+        if lane.get("done_skip_header") and done:
+            done -= 1
+        item["done"] = done
+        target = _pl_target(lane.get("target"))
+        if target is not None:
+            item["target"] = target
+        if lane.get("queue_file") is not None:
+            q = _pl_lines_list(lane["queue_file"])
+            if lane.get("queue_minus_done"):
+                q -= done
+            item["queued"] = max(q, 0)
+        elif target is not None:
+            item["queued"] = max(target - done, 0)
+        if lane.get("rate_from_corpus") and lane.get("corpus") in CORPORA:
+            item["rate_per_24h"] = _fresh(lane["corpus"]).freshness().get(
+                "arrivals_last_24h")
+        elif lane.get("rate_ts_field") and lane.get("done_file"):
+            item["rate_per_24h"] = _pl_ts_count(
+                lane["done_file"], lane["rate_ts_field"], cutoff)
+        out.append(item)
+    meter("pipeline", {}, len(out), (time.time() - t0) * 1000)
+    return {"measured_at": now_iso(), "lanes": out,
+            "discrepancies": cfg.get("discrepancies", []),
+            "note": "Facts and counts about the gathering process. Blocked "
+                    "lanes report status only."}
+
+
 # ---------------------------------------------------------------------------
 # File delivery: the captured bytes leave the box. A metered `download` tool
 # plus MCP resources (qnz-pdf://, qnz-html://, qnz-text://<corpus>/<seq>).

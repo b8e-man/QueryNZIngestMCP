@@ -68,6 +68,15 @@ resumable cursor — and `corpora()` says when fresh records have landed.
    verbatim `pdftotext -layout` output for PDFs (computed on read, nothing
    stored — same verbatim rule as Hansard). Metered per call.
 
+8. **pipeline()** — the gathering process itself: per capture lane, work
+   items still queued, work items completed, the target where the source
+   publishes one, and the completion rate over the last 24h — plus the
+   recorded discrepancy list (measured differences between what the sources
+   report and what is held). Telemetry about acquisition, not contents.
+   A blocked lane reports `status: blocked` and nothing else. Lane list is
+   `pipeline.yaml`, re-read on every call (edits land without a restart);
+   all counts computed live from the pipelines' own queue/manifest files.
+
 ## Resources
 
 The same files are readable as MCP resources (files DO leave the box):
@@ -179,7 +188,9 @@ tokens are compared semantically so token churn is not a change),
 
 - `corpora.yaml` — which corpora are mounted, where their files live, date/id
   field mapping (edit to mount a new corpus; no code changes)
-- `server.py` — the eight tools (mcp SDK v2, MCPServer, streamable-http)
+- `pipeline.yaml` — the capture lanes behind the corpora (queue/done/target
+  sources, blocked lanes, discrepancy facts; read fresh per `pipeline()` call)
+- `server.py` — the nine tools (mcp SDK v2, MCPServer, streamable-http)
 - `README.md` — this
 - runtime state (never committed): `metering.jsonl`, `minted_corpora.jsonl`,
   `server.log`, `.venv/`
