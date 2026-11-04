@@ -133,6 +133,7 @@ class Corpus:
         self._src = {}             # file -> (size, mtime) at last read
         self._gen = 0              # bumped whenever the index changes
         self._fresh_cache = None
+        self._schema_cache = None
         self._lock = threading.Lock()
         self._persist = {}         # id -> [seq, content-hash] — durable state
         self._sidecar_log = []     # sidecar lines awaiting flush
@@ -479,6 +480,22 @@ class Corpus:
             "newest_arrival": arr[-1] if arr else None,
         }
 
+    # -- schema (the field registry a consumer diffs against) --
+    def schema(self) -> dict:
+        """The complete field list a served record can carry: the row's own
+        keys plus the serve-layer envelope. schema_hash moves whenever the
+        shape does — consumers watch it instead of being surprised."""
+        if self._schema_cache is None or self._schema_cache[0] != self._gen:
+            fields = set()
+            for r in self.records:
+                fields.update(r["fields"].keys())
+            fields |= {"seq", "id", "date", "title", "text", "updated_at",
+                       "capture", "file", "file_uri", "annotation"}
+            fl = sorted(fields)
+            h = hashlib.sha1("\n".join(fl).encode()).hexdigest()[:16]
+            self._schema_cache = (self._gen, {"fields": fl, "schema_hash": h})
+        return self._schema_cache[1]
+
 
 CFG = yaml.safe_load(open(CONFIG))
 MEASURE_CFG = CFG.get("measure", {})
@@ -505,8 +522,34 @@ def _fresh(name: str) -> Corpus:
     return CORPORA[name]
 
 
-def _rec_out(r: dict, include_text: bool = True) -> dict:
+def _family(rec: dict) -> str:
+    """pdf | html | raw — declared content_type wins; file extension fills
+    the gap for stores that carry no content_type (e.g. mlc bulk data)."""
+    ctype = str(rec["fields"].get("content_type") or "").split(";")[0].strip()
+    path = str(rec.get("file") or "").lower()
+    if ctype == "application/pdf" or (not ctype and path.endswith(".pdf")):
+        return "pdf"
+    if ctype.startswith("text/html") or (not ctype and path.endswith((".html", ".htm"))):
+        return "html"
+    return "raw"
+
+
+def _file_uri(corpus: str, r: dict):
+    """Where this record's captured bytes live — a URI that resolves via
+    resources/read (qnz-pdf/html/raw by content type)."""
+    if not r.get("file"):
+        return None
+    return f"qnz-{_family(r)}://{corpus}/{r['seq']}"
+
+
+def _rec_out(r: dict, include_text: bool = True,
+             corpus: str | None = None) -> dict:
     out = {"seq": r["seq"], "id": r["id"], **r["fields"]}
+    if corpus:
+        out["file_uri"] = _file_uri(corpus, r)
+        for alias, src_f in (CORPORA[corpus].cfg.get("aliases") or {}).items():
+            if out.get(alias) in (None, "") and out.get(src_f) not in (None, ""):
+                out[alias] = out[src_f]
     if r["date"] and not out.get("date"):
         out["date"] = r["date"]
     if r.get("updated_at"):
@@ -548,6 +591,9 @@ def corpora() -> dict:
                 "source_category": c.cfg.get("source_category"),
                 "has_files": bool(c.cfg.get("path_root"))}
         item.update(c.freshness())
+        sch = dict(c.schema())
+        sch["aliases"] = dict(c.cfg.get("aliases") or {})
+        item["schema"] = sch
         out.append(item)
     meter("corpora", {}, len(out), (time.time() - t0) * 1000)
     return {"corpora": out,
@@ -582,11 +628,12 @@ def records(corpus: str, cursor: int = 0, limit: int = 50,
                     "corpus": corpus}
         sel = [r for r in c.records if r["fields"].get(dtf) == doc_type]
     batch = sel[cursor:cursor + lim]
-    out = [_rec_out(r, include_text) for r in batch]
+    out = [_rec_out(r, include_text, corpus) for r in batch]
     meter("records", {"corpus": corpus, "cursor": cursor, "doc_type": doc_type},
           len(out), (time.time() - t0) * 1000)
     return {"corpus": corpus, "total": len(sel), "doc_type": doc_type,
             "cursor": cursor, "next_cursor": cursor + len(out),
+            "schema_hash": c.schema()["schema_hash"],
             "records": out}
 
 
@@ -608,7 +655,7 @@ def changes(corpus: str, since: str, cursor: int = 0, limit: int = 100,
     sel = sorted((r for r in c.records if r["updated_at"] > since),
                  key=lambda r: (r["updated_at"], r["seq"]))
     page = sel[cursor:cursor + lim]
-    out = [_rec_out(r, include_text) for r in page]
+    out = [_rec_out(r, include_text, corpus) for r in page]
     # Lifecycle events from the re-verify pass (removals/suppressions,
     # content churn, restorations) — a removal is a first-class event,
     # not silence. Source: change_events.jsonl beside the record file
@@ -637,6 +684,7 @@ def changes(corpus: str, since: str, cursor: int = 0, limit: int = 100,
     meter("changes", {"corpus": corpus}, len(out), (time.time() - t0) * 1000)
     return {"corpus": corpus, "since": since, "total": len(sel),
             "cursor": cursor, "next_cursor": cursor + len(out),
+            "schema_hash": c.schema()["schema_hash"],
             "records": out, "events": events}
 
 
@@ -737,7 +785,8 @@ def get(record_id: str, corpus: str | None = None) -> dict:
             if rec["id"] == record_id:
                 meter("get", {"id": record_id, "corpus": corpus}, 1,
                       (time.time() - t0) * 1000)
-                return {"corpus": name, **_rec_out(rec, include_text=True)}
+                return {"corpus": name,
+                        **_rec_out(rec, include_text=True, corpus=name)}
     meter("get", {"id": record_id, "corpus": corpus}, 0, (time.time() - t0) * 1000)
     return {"error": "not found", "record_id": record_id}
 
@@ -1249,8 +1298,7 @@ def download(record_id: str, corpus: str | None = None,
         f = _stored_file(rec)
         payload = open(f, "rb").read()
         note = "bytes exactly as captured; nothing transformed"
-        scheme = ("pdf" if ctype == "application/pdf"
-                  else "html" if ctype.startswith("text/html") else "download")
+        scheme = _family(rec)
         uri = f"qnz-{scheme}://{name}/{rec['seq']}"
         body = BlobResourceContents(uri=uri, mimeType=ctype,
                                     blob=base64.b64encode(payload).decode())
@@ -1275,11 +1323,9 @@ def download(record_id: str, corpus: str | None = None,
 def _raw_resource(corpus: str, seq: str, need: str, family: str) -> bytes:
     rec = _rec_at(corpus, seq)
     f = _stored_file(rec)
-    ctype = _ctype(rec)
-    ok = (ctype == "application/pdf" if family == "pdf"
-          else ctype.startswith("text/html"))
-    if not ok:
-        raise ResourceError(f"qnz-{family}://{corpus}/{seq} is {ctype}; "
+    if _family(rec) != family:
+        raise ResourceError(f"qnz-{family}://{corpus}/{seq} is "
+                            f"qnz-{_family(rec)}://-family; "
                             f"use the scheme matching its content type")
     meter(f"resource:qnz-{family}", {"corpus": corpus, "seq": seq}, 1, 0)
     return open(f, "rb").read()
@@ -1299,6 +1345,18 @@ def res_pdf(corpus: str, seq: str) -> bytes:
                           "(e.g. courtsofnz case pages).")
 def res_html(corpus: str, seq: str) -> bytes:
     return _raw_resource(corpus, seq, "text/html", "html")
+
+
+@mcp.resource("qnz-raw://{corpus}/{seq}", mime_type="application/octet-stream",
+              name="captured-raw",
+              description="Captured bytes exactly as fetched, any content "
+                          "type (e.g. xlsx bulk datasets). file_uri points "
+                          "here for non-PDF/HTML records.")
+def res_raw(corpus: str, seq: str) -> bytes:
+    rec = _rec_at(corpus, seq)
+    f = _stored_file(rec)
+    meter("resource:qnz-raw", {"corpus": corpus, "seq": seq}, 1, 0)
+    return open(f, "rb").read()
 
 
 @mcp.resource("qnz-text://{corpus}/{seq}", mime_type="text/plain",
@@ -1326,6 +1384,8 @@ def res_readme() -> str:
         "       qnz-html://<corpus>/<seq>  HTML bytes as fetched\n"
         "       qnz-text://<corpus>/<seq>  verbatim text (pdftotext -layout)\n"
         "     <seq> is the record's stable `seq` from `records`/`get`.\n"
+        "Every record with bytes carries `file_uri` — the exact URI\n"
+        "to pass to resources/read (qnz-pdf/qnz-html/qnz-raw by type).\n"
         "Raw bytes are always exactly as captured (sha256-verifiable against\n"
         "the capture block). Text is computed on read; nothing is stored.\n")
 

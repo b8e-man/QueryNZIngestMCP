@@ -84,11 +84,26 @@ The same files are readable as MCP resources (files DO leave the box):
 - `qnz://readme` — file-delivery conventions (start here)
 - `qnz-pdf://<corpus>/<seq>` — captured PDF bytes exactly as fetched
 - `qnz-html://<corpus>/<seq>` — captured HTML bytes exactly as fetched
+- `qnz-raw://<corpus>/<seq>` — captured bytes of any other type (xlsx, csv…)
 - `qnz-text://<corpus>/<seq>` — verbatim text view (pdftotext -layout)
 
+Every record with bytes carries `file_uri` — the exact URI to pass to
+resources/read, family chosen by content type (declared `content_type`
+first, file extension filling the gap for stores that carry none).
 `<seq>` is the record's stable `seq` from `records`/`get`. Scheme must match
-the record's content type (mismatches error loudly). Corpora that carry
+the record's family (mismatches error loudly). Corpora that carry
 stored bytes advertise it as `has_files` in `corpora()`.
+
+## Schema stability
+
+`corpora()` advertises, per corpus, a **field registry** (`schema.fields`,
+the complete list a served record can carry) and `schema_hash`, which moves
+whenever the shape does. `records`/`changes` envelopes carry the current
+`schema_hash`, so a consumer can detect drift on arrival instead of going
+red mid-parse. Where source field names mislead (e.g. GETS notices shaped
+like court records), the corpus declares `schema.aliases` (served as extra
+fields — `tender_name`, `tender_id` — with the originals kept for
+provenance).
 
 ## Record shape
 
