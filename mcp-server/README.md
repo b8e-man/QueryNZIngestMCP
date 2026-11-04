@@ -209,3 +209,27 @@ tokens are compared semantically so token churn is not a change),
 - `README.md` — this
 - runtime state (never committed): `metering.jsonl`, `minted_corpora.jsonl`,
   `server.log`, `.venv/`
+
+## Estate corpora (handover 2026-11-05)
+
+21 corpora `estate-<lane>` hold every document the QueryNZ estate captured
+itself from the websites (59,323 docs, 27 GB) — one corpus per estate lane,
+named 1:1 with the lane so each lane can switch to reading here. Documents
+live at `/opt/data/querynz-estate/sources/<lane>/` (file named by the bytes'
+sha256 + `manifest.jsonl` with urls/via, landings, fetched_at). The estate's
+gathering code, lane specs, legal positions, lane tables, fetch-gate ledger
+and run history sit under `/opt/data/querynz-estate/supplement/` (raw, kept
+for provenance — not mounted as corpora).
+
+Config keys added for these (defaults unchanged for all other corpora):
+
+- `file_fields` — ordered row keys that name the retained bytes relative to
+  `path_root` (default `[path, raw_file]`; estate manifests use `[file]`)
+- `text_fields` — search text built only from these columns (lists/dicts
+  flattened). Default is unchanged: all scalar strings in the row
+- `title_field` entries may now be paths: `names[0]`, `urls[0].url`
+
+Record `date` for estate corpora is the capture date (`fetched_at`, falling
+back to `landed_at`) — the manifests carry no content dates; those live in the
+estate's lane tables (supplement/tables/). `download` hashes the delivered
+bytes against the capture sha256 and reports `sha256_matches_capture`.

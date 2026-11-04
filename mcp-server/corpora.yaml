@@ -197,6 +197,322 @@ corpora:
     freshness_sla_hours: 24
     aliases: {tender_name: case_name, tender_id: case_slug}
 
+
+  estate-building_practitioners:
+    label: "Building Practitioners Board decisions + LBP register (estate capture, handed over 2026-11-05)"
+    source_category: professional-register
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/building_practitioners/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/building_practitioners
+    freshness_sla_hours: 720
+  estate-candidate_returns:
+    label: "Electoral Commission candidate returns (general elections) (estate capture, handed over 2026-11-05)"
+    source_category: election-finance
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/candidate_returns/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/candidate_returns
+    freshness_sla_hours: 720
+  estate-charities:
+    label: "Charities Register (entities, officers, returns) (estate capture, handed over 2026-11-05)"
+    source_category: charity-register
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/charities/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/charities
+    freshness_sla_hours: 720
+  estate-commerce_commission:
+    label: "Commerce Commission case register (estate capture, handed over 2026-11-05)"
+    source_category: regulator-enforcement
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/commerce_commission/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/commerce_commission
+    freshness_sla_hours: 720
+  estate-council_minutes:
+    label: "Council meeting minutes (InfoCouncil) (estate capture, handed over 2026-11-05)"
+    source_category: council-governance
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/council_minutes/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/council_minutes
+    freshness_sla_hours: 720
+  estate-council_procurement:
+    label: "Council procurement terms pages (estate capture, handed over 2026-11-05)"
+    source_category: procurement-notice
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/council_procurement/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/council_procurement
+    freshness_sla_hours: 720
+  estate-councillor_interests:
+    label: "Councillors' registers of interests (estate capture, handed over 2026-11-05)"
+    source_category: council-governance
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/councillor_interests/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/councillor_interests
+    freshness_sla_hours: 720
+  estate-courts:
+    label: "courtsofnz.govt.nz case pages + judgment PDFs (estate copy) (estate capture, handed over 2026-11-05)"
+    source_category: judicial-decision
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/courts/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/courts
+    freshness_sla_hours: 720
+  estate-courts-era:
+    label: "Employment Relations Authority determinations (estate copy) (estate capture, handed over 2026-11-05)"
+    source_category: judicial-decision
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/courts-era/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/courts-era
+    freshness_sla_hours: 720
+  estate-courts-finder:
+    label: "Ministry decisions finder decisions (estate copy) (estate capture, handed over 2026-11-05)"
+    source_category: judicial-decision
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/courts-finder/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/courts-finder
+    freshness_sla_hours: 720
+  estate-courts-jdo:
+    label: "Judicial Decisions Online decision PDFs (estate copy) (estate capture, handed over 2026-11-05)"
+    source_category: judicial-decision
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/courts-jdo/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/courts-jdo
+    freshness_sla_hours: 720
+  estate-courts-survey:
+    label: "Court and tribunal site survey (reference pages) (estate capture, handed over 2026-11-05)"
+    source_category: judicial-decision
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/courts-survey/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/courts-survey
+    freshness_sla_hours: 720
+  estate-disclosures:
+    label: "Electoral Commission donation disclosures (estate capture, handed over 2026-11-05)"
+    source_category: election-finance
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/disclosures/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/disclosures
+    freshness_sla_hours: 720
+  estate-fma:
+    label: "FMA warnings and enforcement actions (estate capture, handed over 2026-11-05)"
+    source_category: regulator-enforcement
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/fma/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/fma
+    freshness_sla_hours: 720
+  estate-grants:
+    label: "Class 4 gaming and Lottery grants (estate capture, handed over 2026-11-05)"
+    source_category: funding-grant
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/grants/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/grants
+    freshness_sla_hours: 720
+  estate-iwi_directory:
+    label: "Te Kahui Mangai (iwi and hapu directory) (estate capture, handed over 2026-11-05)"
+    source_category: indigenous-directory
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/iwi_directory/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/iwi_directory
+    freshness_sla_hours: 720
+  estate-local_elections:
+    label: "Local election candidate returns (council sites) (estate capture, handed over 2026-11-05)"
+    source_category: election-finance
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/local_elections/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/local_elections
+    freshness_sla_hours: 720
+  estate-real_estate_authority:
+    label: "Real Estate Authority decisions (estate capture, handed over 2026-11-05)"
+    source_category: professional-disciplinary
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/real_estate_authority/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/real_estate_authority
+    freshness_sla_hours: 720
+  estate-settlement_commitments:
+    label: "Te Haeata settlement commitments (watched pages) (estate capture, handed over 2026-11-05)"
+    source_category: treaty-settlement
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/settlement_commitments/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/settlement_commitments
+    freshness_sla_hours: 720
+  estate-tenancy_tribunal:
+    label: "Tenancy Tribunal orders (estate capture, handed over 2026-11-05)"
+    source_category: judicial-decision
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/tenancy_tribunal/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/tenancy_tribunal
+    freshness_sla_hours: 720
+  estate-worksafe:
+    label: "WorkSafe prosecutions and undertakings (estate capture, handed over 2026-11-05)"
+    source_category: regulator-enforcement
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/worksafe/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/worksafe
+    freshness_sla_hours: 720
 # The `gaps` tool: completeness measurement against the NZLII comparison
 # index. NZLII is a COMPARISON source only (metadata IDs, never content):
 # the Wayback CDX index of nzlii.org case URLs, where the URL number IS the

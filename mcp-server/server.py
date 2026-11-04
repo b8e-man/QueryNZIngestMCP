@@ -72,6 +72,36 @@ def strip_html(html: str) -> str:
     return WS_RE.sub(" ", TAG_RE.sub(" ", html)).strip()
 
 
+def _field_get(row: dict, key: str):
+    """Field accessor with list/dict paths for title/text columns:
+    plain key ('case_name'), list index ('names[0]'), nested ('urls[0].url')."""
+    if key in row:
+        return row[key]
+    cur = row
+    for part in re.findall(r"[^.\[\]]+|\[\d+\]", key):
+        if part.startswith("["):
+            if not isinstance(cur, list):
+                return None
+            i = int(part[1:-1])
+            cur = cur[i] if i < len(cur) else None
+        else:
+            if not isinstance(cur, dict):
+                return None
+            cur = cur.get(part)
+    return cur
+
+
+def _flatten_str(v, out: list):
+    if isinstance(v, str):
+        out.append(v)
+    elif isinstance(v, dict):
+        for x in v.values():
+            _flatten_str(x, out)
+    elif isinstance(v, list):
+        for x in v:
+            _flatten_str(x, out)
+
+
 def norm_date(v) -> str:
     if not v:
         return ""
@@ -268,7 +298,8 @@ class Corpus:
                   or hashlib.sha256(json.dumps(row, sort_keys=True).encode()).hexdigest()[:16])
         tf = self.cfg.get("title_field", "")
         tfs = tf if isinstance(tf, list) else [tf]
-        title = next((str(row[k]) for k in tfs if k and row.get(k)), "")
+        title = next((str(_field_get(row, k)) for k in tfs
+                      if k and _field_get(row, k)), "")
         rec = {
             "id": rid,
             "date": norm_date(self._date_val(row)),
@@ -299,7 +330,10 @@ class Corpus:
         if cap:
             rec["capture"] = cap
         proot = self.cfg.get("path_root")
-        rf = row.get("path") or row.get("raw_file")
+        # `file_fields` (optional, ordered): which row key holds the retained
+        # bytes' name relative to path_root. Default preserves the old chain.
+        _ff = self.cfg.get("file_fields") or ["path", "raw_file"]
+        rf = next((row.get(k) for k in _ff if row.get(k)), None)
         if rf:
             # resolution aid only — the raw `path`/`raw_file` stays
             # as-received in fields/capture. Order: path_root, then the
@@ -436,6 +470,13 @@ class Corpus:
             # text (same object — no duplicate of a 300KB body in RAM)
             if isinstance(raw, str):
                 text = raw
+            elif self.cfg.get("text_fields"):
+                # search text from named columns only (list/dict flattened);
+                # e.g. estate manifests: names[] + urls[].url are the handles
+                vals = []
+                for k in self.cfg["text_fields"]:
+                    _flatten_str(_field_get(row, k), vals)
+                text = " ".join(vals)
             else:
                 text = " ".join(str(v) for v in row.values()
                                 if isinstance(v, str))
