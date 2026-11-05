@@ -210,6 +210,8 @@ class Conn:
                          ("pg_try_advisory_lock", lambda x: 1),
                          ("pg_advisory_unlock", lambda x: 1),
                          ("hashtext", lambda s: hash(str(s)) & 0x7FFFFFFF),
+                         ("clock_timestamp", lambda: __import__("datetime").datetime.now(
+                             __import__("datetime").timezone.utc).strftime("%Y-%m-%d %H:%M:%S")),
                          ("pg_get_serial_sequence", lambda a, b: "")):
             self._raw.create_function(name, -1, fn)
         self._raw.create_aggregate("bool_or", 1, _BoolOr)
@@ -273,6 +275,11 @@ class Conn:
         sql = sql.strip()
         if not sql:
             return []
+        # PG idioms with no SQLite shape, rewritten before parsing:
+        # now() - make_interval(days => X)  ->  datetime('now', '-' || X || ' days')
+        sql = re.sub(
+            r"\bnow\(\)\s*-\s*make_interval\(days\s*=>\s*([^)]+)\)",
+            r"datetime('now', '-' || \1 || ' days')", sql)
         if isinstance(params, dict):
             # psycopg2 dict style: the driver interpolates client-side
             sql = _NAMEPAT.sub(lambda m: _sql_literal(params.get(m.group(1))), sql)
