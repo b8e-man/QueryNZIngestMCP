@@ -93,6 +93,17 @@ def load_jobs():
         "command": ["python", "elections_nz.py", "--lane", "disclosures",
                     "--budget-s", "3600"],
         "at_utc": ["09:45"]}
+    # the stealth freshness (Arthur, 2026-11-05): the WAF'd hosts read
+    # through patchright + a rotating residential session, at a RANDOM time
+    # each day (random_window) so no pattern exists to fingerprint. The
+    # backfill never uses it: wayback_rescue below, the legitimate route.
+    out["local-stealth-fresh"] = {
+        "command": ["python", "stealth_fresh.py", "--budget-s", "2400"],
+        "random_window": "21:00-07:00"}   # 10:00-20:00 NZDT, random daily
+    out["local-wayback-rescue"] = {
+        "command": ["python", "wayback_rescue.py", "--budget-s", "5400",
+                    "--max-requests", "900"],
+        "at_utc": ["11:30"]}
     return out
 
 
@@ -150,7 +161,8 @@ def main(argv):
     jobs = load_jobs()
     if "--list" in argv:
         for name, spec in jobs.items():
-            print(name, spec["at_utc"], " ".join(spec["command"]))
+            print(name, spec.get("at_utc") or spec.get("random_window"),
+                  " ".join(spec["command"]))
         return 0
     if "--run" in argv:
         name = argv[argv.index("--run") + 1]
@@ -161,7 +173,21 @@ def main(argv):
     while True:
         now = dt.datetime.now(dt.timezone.utc)
         for name, spec in jobs.items():
-            for hhmm in spec["at_utc"]:
+            fires = list(spec.get("at_utc") or [])
+            if "random_window" in spec:
+                # a fresh random minute inside the window each UTC day
+                today = now.date()
+                if spec.get("_rday") != today:
+                    w0, w1 = spec["random_window"].split("-")
+                    h0, m0 = (int(x) for x in w0.split(":"))
+                    h1, m1 = (int(x) for x in w1.split(":"))
+                    span = (h1 * 60 + m1) - (h0 * 60 + m0)
+                    if span <= 0:
+                        span += 24 * 60
+                    pick = (h0 * 60 + m0 + __import__("random").randrange(span)) % (24 * 60)
+                    spec["_rday"], spec["_rmin"] = today, pick
+                fires.append(f"{spec['_rmin'] // 60:02d}:{spec['_rmin'] % 60:02d}")
+            for hhmm in fires:
                 hh, mm = hhmm.split(":")
                 fire = now.replace(hour=int(hh), minute=int(mm), second=0,
                                    microsecond=0)
