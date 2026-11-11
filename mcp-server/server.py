@@ -23,6 +23,7 @@ Metering: every tool call is appended to metering.jsonl (per-call).
 import bisect
 import base64
 import hashlib
+import glob
 import json
 import math
 import os
@@ -174,7 +175,23 @@ class Corpus:
     def _files(self):
         return [p for p in (self.cfg.get("extracted_file"),
                             self.cfg.get("captures_file"),
-                            self.cfg.get("record_file")) if p]
+                            *self._record_files()) if p]
+
+    def _record_files(self):
+        """`record_file` may be a path, a list of paths, or a glob (e.g. the
+        news corpora's per-outlet manifests). Globs re-expand on every call,
+        so a newly appeared outlet manifest triggers the rebuild check."""
+        rf = self.cfg.get("record_file")
+        if not rf:
+            return []
+        items = rf if isinstance(rf, list) else [rf]
+        out = []
+        for it in items:
+            if any(ch in it for ch in "*?["):
+                out.extend(sorted(glob.glob(it)))
+            else:
+                out.append(it)
+        return out
 
     def _needs_rebuild(self) -> bool:
         for p in self._files():
@@ -336,14 +353,24 @@ class Corpus:
         rf = next((row.get(k) for k in _ff if row.get(k)), None)
         if rf:
             # resolution aid only — the raw `path`/`raw_file` stays
-            # as-received in fields/capture. Order: path_root, then the
-            # record file's own dir (Hansard raw/hansard_*.pdf), then
-            # pages_dir (docs corpora captures).
-            base = (proot
-                    or os.path.dirname(self.cfg.get("record_file", "") or "")
-                    or self.cfg.get("pages_dir"))
-            if base:
-                rec["file"] = os.path.join(base, str(rf).lstrip("/"))
+            # as-received in fields/capture. An absolute value (estate
+            # manifests' `file`: /opt/data/querynz-estate/store/…) is the
+            # store address itself — use verbatim, never re-root it.
+            # Relative values resolve under: path_root, then the record
+            # file's own dir (Hansard raw/hansard_*.pdf), then pages_dir
+            # (docs corpora captures).
+            rf = str(rf)
+            if os.path.isabs(rf):
+                rec["file"] = rf
+            else:
+                base = (proot
+                        or os.path.dirname(
+                            self.cfg.get("record_file", "")
+                            if isinstance(self.cfg.get("record_file"), str)
+                            else "")
+                        or self.cfg.get("pages_dir"))
+                if base:
+                    rec["file"] = os.path.join(base, rf.lstrip("/"))
         return rec
 
     def _append(self, rec: dict) -> dict:
@@ -463,7 +490,10 @@ class Corpus:
             self._append(rec)
 
     def _load_records(self):
-        path = self.cfg.get("record_file")
+        for path in self._record_files():
+            self._load_records_file(path)
+
+    def _load_records_file(self, path):
         for row in self._read_new(path):
             raw = row.get("text")
             # rows that already carry a text field reuse it as the search
@@ -1147,7 +1177,13 @@ def _pl_lines(path: str) -> int:
 def _pl_lines_list(paths) -> int:
     if isinstance(paths, str):
         paths = [paths]
-    return sum(_pl_lines(p) for p in paths)
+    out = []
+    for p in paths:
+        if any(ch in p for ch in "*?["):
+            out.extend(sorted(glob.glob(p)))
+        else:
+            out.append(p)
+    return sum(_pl_lines(p) for p in out)
 
 
 def _pl_ts_count(path: str, field: str, cutoff: str) -> int:
@@ -1205,7 +1241,8 @@ def pipeline() -> dict:
                 "status": status}
         if lane.get("corpus"):
             item["corpus"] = lane["corpus"]
-        done = _pl_lines(lane["done_file"]) if lane.get("done_file") else 0
+        done = (_pl_lines_list(lane["done_file"])
+                if lane.get("done_file") else 0)
         if lane.get("done_skip_header") and done:
             done -= 1
         item["done"] = done

@@ -582,6 +582,15 @@ def open_url(url: str, *, timeout: int = 30, headers: dict = None, pacer: Pacer 
     The answer's headers come back on `headers`, so a lane can keep an ETag
     and send it as If-None-Match; a 304 then comes back `unchanged`, no body.
     `fetch(url, timeout) -> (status, body, final[, headers])` is injectable."""
+    if fetch is None and os.environ.get("QV4_RECAPTURE") != "1":
+        # global dedupe (2026-11-10): a URL the store already holds as an
+        # immutable document is answered from the captured bytes — the rule
+        # "nothing fetched twice" enforced at the one gate every lane shares
+        from support.docstore.held import held_bytes
+        got = held_bytes(url)
+        if got is not None:
+            sha, body = got
+            return Fetched(url, 200, body, url, "", "", {"X-QV4-Held": sha})
     asked, hops = url, 0
     while True:
         dec = check(url, positions_dir=positions_dir, ledger_dir=ledger_dir)

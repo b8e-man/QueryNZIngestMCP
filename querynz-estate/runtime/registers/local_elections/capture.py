@@ -284,6 +284,15 @@ class Run:
             if state != "landed":
                 self.t.file(pid, url, r.status if r else None, None, None, None, state, why)
                 continue
+            head = r.body[:200].lstrip().lower()
+            if head.startswith((b"<!doctype", b"<html", b"<head", b"<body")):
+                # a file URL must never answer HTML: Incapsula interstitials
+                # and viewer shells carry no challenge wording and would land
+                # as stubs under the file's name. Blocked or wrong body —
+                # record it, land nothing.
+                self.t.file(pid, url, r.status, None, None, None,
+                            "blocked-html", "HTML body on a file URL")
+                continue
             name = urllib.parse.unquote(url)
             ref, _new = self.land(r.body, name=name, source=SOURCE, name_kind="url", content_type="")
             self.landed += 1

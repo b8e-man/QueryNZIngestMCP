@@ -46,6 +46,7 @@ import os
 import sys
 import time
 import urllib.parse
+from zoneinfo import ZoneInfo
 
 import support.fetchgate as fg
 
@@ -60,6 +61,7 @@ FIELDS = ("id", "applicationNumber_s", "publishedDate_dt", "unpublishedDate_s", 
 ROWS = 1000                   # rows per listing request; a month is about 900
 FLOOR_S = 5.0                 # the position's floor; the gate's, if slower, binds too
 OFF_PEAK = (22, 6)            # NZ local hours: start at 22:00, stop at 06:00
+NZ = ZoneInfo("Pacific/Auckland")   # those hours are NZ local (the box's clock is UTC)
 WINDOW_MONTHS = 37            # three years and the month in hand
 STOP_AFTER_FAILURES = 3
 DEFAULT_BUDGET_S = 16200      # four and a half hours a night
@@ -153,7 +155,8 @@ def order_rows(doc: dict, listing_sha: str) -> list:
 
 def off_peak(now_local: dt.datetime) -> bool:
     start, end = OFF_PEAK
-    return now_local.hour >= start or now_local.hour < end
+    h = now_local.astimezone(NZ).hour
+    return h >= start or h < end
 
 
 def months_to_list(today: dt.date, listed: set) -> list:
@@ -243,7 +246,7 @@ class Run:
         self.pacer = pacer or fg.Pacer()
         self.gate_pacer = gate_pacer
         self.clock = clock or time.monotonic
-        self.now_local = now_local or (lambda: dt.datetime.now().astimezone())
+        self.now_local = now_local or (lambda: dt.datetime.now(NZ))
         self.budget_s, self.max_items, self.anytime, self.log = budget_s, max_items, anytime, log
         self.started = self.clock()
         self.failures = 0

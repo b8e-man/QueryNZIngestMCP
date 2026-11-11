@@ -1,0 +1,393 @@
+# pipeline.yaml — the gathering process behind the corpora.
+#
+# Read fresh by the `pipeline` tool on every call: lane edits land without a
+# server restart. All numbers are computed live from the files named here
+# (line counts, 24h timestamp scans, state-file keys) — nothing cached.
+#
+# Lane fields:
+#   name / label      identity
+#   corpus            the corpus this lane feeds (enables corpus-arrival rates)
+#   status            active | complete | paused | blocked
+#   queue_file        file(s) of work items still pending -> queued
+#   queue_minus_done  queued = lines(queue_file) - lines(done_file)
+#   done_file         file of completed work items -> done
+#   rate_ts_field     timestamp field counted over the last 24h -> rate_per_24h
+#   rate_from_corpus  rate = corpus arrivals over the last 24h
+#   target            total work items: int, or {json: state file, key: dotted}
+#   queued falls back to max(target - done, 0) when there is no queue_file
+#
+# A blocked lane carries name/label/status ONLY — no reasons recorded here.
+# Discrepancies are measured facts: what the sources report vs what is held.
+
+lanes:
+  - name: courts-capture
+    label: Court & tribunal judgment PDFs
+    corpus: courts
+    status: active
+    queue_file: /opt/data/court-scraper/queue.jsonl
+    done_file: /opt/data/court-scraper/done.jsonl
+    rate_ts_field: last_try
+
+  - name: gets-capture
+    label: GETS tender notices
+    corpus: gets
+    status: active
+    queue_file: /opt/data/gets-scraper/queue.jsonl
+    done_file: /opt/data/gets-scraper/done.jsonl
+    rate_ts_field: last_try
+
+  - name: parliament-written-questions
+    label: Written questions (API enumeration)
+    corpus: parliament-written-questions
+    status: active
+    done_file: /opt/data/parliament-scraper/data/api_queue/questions.jsonl
+    target: {json: /opt/data/parliament-scraper/api_queue_state.json, key: questions.total}
+    rate_from_corpus: true
+
+  - name: parliament-bills
+    label: Bills (current)
+    corpus: parliament-bills
+    status: active
+    done_file: /opt/data/parliament-scraper/data/api_queue/bills.jsonl
+    target: {json: /opt/data/parliament-scraper/api_queue_state.json, key: bills.total}
+    rate_from_corpus: true
+
+  - name: parliament-bills-historical
+    label: Bills (historical)
+    corpus: parliament-bills-historical
+    status: active
+    done_file: /opt/data/parliament-scraper/data/api_queue/bills-historical.jsonl
+    target: {json: /opt/data/parliament-scraper/api_queue_state.json, key: bills-historical.total}
+    rate_from_corpus: true
+
+  - name: parliament-sops
+    label: Supplementary order papers (rows)
+    corpus: parliament-sops
+    status: active
+    done_file: /opt/data/parliament-scraper/data/api_queue/SOPs.jsonl
+    target: {json: /opt/data/parliament-scraper/api_queue_state.json, key: SOPs.total}
+    rate_from_corpus: true
+
+  - name: parliament-sc-reports
+    label: Select committee reports (rows)
+    corpus: parliament-sc-reports
+    status: active
+    done_file: /opt/data/parliament-scraper/data/api_queue/sc-reports.jsonl
+    target: {json: /opt/data/parliament-scraper/api_queue_state.json, key: sc-reports.total}
+    rate_from_corpus: true
+
+  - name: parliament-sc-submissions
+    label: Select committee submissions (rows)
+    corpus: parliament-sc-submissions
+    status: active
+    done_file: /opt/data/parliament-scraper/data/api_queue/sc-submissions.jsonl
+    target: {json: /opt/data/parliament-scraper/api_queue_state.json, key: sc-submissions.total}
+    rate_from_corpus: true
+
+  - name: parliament-sc-evidence
+    label: Select committee evidence rows
+    corpus: parliament-sc-evidence
+    status: active
+    done_file: /opt/data/parliament-scraper/data/api_queue/sc-evidence.jsonl
+    target: 1111490
+    rate_from_corpus: true
+
+  - name: parliament-papers
+    label: Tabled papers (rows)
+    corpus: parliament-papers
+    status: active
+    done_file: /opt/data/parliament-scraper/data/api_queue/papers.jsonl
+    target: 39053
+    rate_from_corpus: true
+
+  - name: parliament-doc-bytes
+    label: Document attachment PDFs (sc-reports, papers, SOPs)
+    status: active
+    queue_file:
+      - /opt/data/parliament-scraper/data/api_queue/sc-reports.jsonl
+      - /opt/data/parliament-scraper/data/api_queue/papers.jsonl
+      - /opt/data/parliament-scraper/data/api_queue/SOPs.jsonl
+    queue_minus_done: true
+    done_file: /opt/data/parliament-scraper/data/doc_pdfs_manifest.jsonl
+    rate_ts_field: fetched_at
+
+  - name: parliament-wayback
+    label: Parliament.nz pages via Wayback
+    corpus: parliament-wayback
+    status: active
+    queue_file: /opt/data/parliament-scraper/wayback_queue.jsonl
+    done_file: /opt/data/parliament-scraper/data/wayback_docs/manifest.jsonl
+    rate_ts_field: ts
+
+  - name: parliament-hansard-debates
+    label: Hansard daily debate PDFs
+    corpus: parliament-hansard-debates
+    status: active
+    done_file: /opt/data/parliament-scraper/data/hansard_debates.jsonl
+    rate_from_corpus: true
+
+  - name: parliament-diaries
+    label: Ministerial diary releases
+    corpus: parliament-diaries
+    status: complete
+    done_file: /opt/data/parliament-scraper/data/diary_release_list.csv
+    done_skip_header: true
+    target: 2560
+    rate_from_corpus: true
+
+  - name: court-mlc-data
+    label: Maori Land Court bulk datasets
+    corpus: court-mlc-data
+    status: complete
+    done_file: /opt/data/court-scraper/data/mlc_data_records.jsonl
+    target: 27
+
+  - name: beehive-capture
+    label: Beehive page bodies (backfill + freshness)
+    corpus: beehive
+    status: active
+    queue_file: /opt/data/beehive-scraper/backfill_queue.jsonl
+    done_file: /opt/data/beehive-scraper/done.jsonl
+    rate_ts_field: fetched_at
+
+  - name: mbie-bulk-csv
+    label: "MBIE bulk award CSVs + dictionary (GETS open data), verbatim by hash"
+    corpus: estate-tenders
+    status: active
+    queue_file: /opt/data/gets-scraper/data/external_missing.jsonl
+    done_file: /opt/data/gets-scraper/data/external_manifest.jsonl
+    rate_ts_field: fetched_at
+
+  - name: sop-attachment-bytes
+    label: SOP attachment PDFs
+    status: blocked
+
+  - name: sc-evidence-bytes
+    label: SC evidence document PDFs
+    status: blocked
+
+  - name: wq-attachments
+    label: Written question attachments
+    status: blocked
+
+  - name: pataka-whenua
+    label: Pataka Whenua minute books
+    status: blocked
+
+  # ------------------------------------------------------------------
+  # Estate capture lanes (the QueryNZ estate sources, runner: the estate
+  # scheduler at /opt/data/querynz-estate/runtime — once-nightly off-peak
+  # through the fetch gate). Freshness lanes: done = the source's own
+  # append-only landing manifest, rate = corpus arrivals / 24h.
+  - name: estate-building-practitioners
+    label: "Building Practitioners Board decisions + LBP register (qv4-building-practitioners-capture, -register-capture)"
+    corpus: estate-building_practitioners
+    status: active
+    done_file: /opt/data/querynz-estate/sources/building_practitioners/manifest.jsonl
+    rate_from_corpus: true
+
+  - name: estate-candidate-returns
+    label: "Electoral Commission candidate returns (qv4-candidate-returns-capture)"
+    corpus: estate-candidate_returns
+    status: active
+    done_file: /opt/data/querynz-estate/sources/candidate_returns/manifest.jsonl
+    rate_from_corpus: true
+
+  - name: estate-charities
+    label: "Charities Register entities/officers/returns (qv4-charities-capture)"
+    corpus: estate-charities
+    status: active
+    done_file: /opt/data/querynz-estate/sources/charities/manifest.jsonl
+    rate_from_corpus: true
+
+  - name: estate-commerce-commission
+    label: "Commerce Commission case register (qv4-commerce-commission-capture)"
+    corpus: estate-commerce_commission
+    status: active
+    done_file: /opt/data/querynz-estate/sources/commerce_commission/manifest.jsonl
+    rate_from_corpus: true
+
+  - name: estate-council-minutes
+    label: "Council meeting minutes (qv4-council-minutes-capture)"
+    corpus: estate-council_minutes
+    status: active
+    done_file: /opt/data/querynz-estate/sources/council_minutes/manifest.jsonl
+    rate_from_corpus: true
+
+  - name: estate-councillor-interests
+    label: "Councillors' registers of interests (qv4-councillor-interests-capture)"
+    corpus: estate-councillor_interests
+    status: active
+    done_file: /opt/data/querynz-estate/sources/councillor_interests/manifest.jsonl
+    rate_from_corpus: true
+
+  - name: estate-disclosures
+    label: "Electoral Commission donation disclosures (qv4-disclosures-capture)"
+    corpus: estate-disclosures
+    status: active
+    done_file: /opt/data/querynz-estate/sources/disclosures/manifest.jsonl
+    rate_from_corpus: true
+
+  - name: estate-fma
+    label: "FMA warnings and enforcement (qv4-fma-capture)"
+    corpus: estate-fma
+    status: active
+    done_file: /opt/data/querynz-estate/sources/fma/manifest.jsonl
+    rate_from_corpus: true
+
+  - name: estate-grants
+    label: "Class 4 gaming and Lottery grants (qv4-grants-capture)"
+    corpus: estate-grants
+    status: active
+    done_file: /opt/data/querynz-estate/sources/grants/manifest.jsonl
+    rate_from_corpus: true
+
+  - name: estate-iwi-directory
+    label: "Te Kahui Mangai iwi/hapu directory (qv4-iwi-directory-capture)"
+    corpus: estate-iwi_directory
+    status: active
+    done_file: /opt/data/querynz-estate/sources/iwi_directory/manifest.jsonl
+    rate_from_corpus: true
+
+  - name: estate-local-elections
+    label: "Local election candidate returns (qv4-local-elections-listings, -files)"
+    corpus: estate-local_elections
+    status: active
+    done_file: /opt/data/querynz-estate/sources/local_elections/manifest.jsonl
+    rate_from_corpus: true
+
+  - name: estate-real-estate-authority
+    label: "Real Estate Authority decisions (qv4-real-estate-authority-capture)"
+    corpus: estate-real_estate_authority
+    status: active
+    done_file: /opt/data/querynz-estate/sources/real_estate_authority/manifest.jsonl
+    rate_from_corpus: true
+
+  - name: estate-settlement-commitments
+    label: "Te Haeata settlement commitments, watched pages (qv4-settlement-commitments-watch)"
+    corpus: estate-settlement_commitments
+    status: active
+    done_file: /opt/data/querynz-estate/sources/settlement_commitments/manifest.jsonl
+    rate_from_corpus: true
+
+  - name: estate-tenancy-tribunal
+    label: "Tenancy Tribunal orders, freshness (qv4-tenancy-tribunal-capture, soonest to leave first)"
+    corpus: estate-tenancy_tribunal
+    status: active
+    done_file: /opt/data/querynz-estate/sources/tenancy_tribunal/manifest.jsonl
+    rate_from_corpus: true
+
+  - name: estate-worksafe
+    label: "WorkSafe prosecutions and undertakings (qv4-worksafe-capture)"
+    corpus: estate-worksafe
+    status: active
+    done_file: /opt/data/querynz-estate/sources/worksafe/manifest.jsonl
+    rate_from_corpus: true
+
+  # estate-news: the news-scrapers fleet (67 outlets asked, 58 landing,
+  # NZME from 2026-10-17/18 under ruling 169; capture-and-hold for the
+  # nzherald network, ruling 115). done = all per-outlet landing manifests.
+  - name: news-capture
+    label: "NZ news outlets, raw page captures (newsscrapers fleet, daily cadence)"
+    corpus: estate-news
+    status: active
+    done_file: /opt/data/news-scrapers/data/*/manifest.jsonl
+    rate_from_corpus: true
+
+  # the estate's tenancy ask (2026-11-11): 13,249 listed orders neither
+  # register holds. queue = the ask minus what has since landed, refreshed
+  # nightly (tenancy_missing_queue_refresh.py); worked soonest-take-down
+  # first by the estate lane above.
+  - name: estate-tenancy-ask-2026-11-11
+    label: "Tenancy orders the estate's register lists and neither holds (ask 2026-11-11)"
+    corpus: estate-tenancy_tribunal
+    status: active
+    queue_file: /opt/data/querynz-estate/tenancy_missing_queue.jsonl
+    target: 13249
+    rate_from_corpus: true
+
+  # ------------------------------------------------------------------
+  # Old-collector ports (the 2026-11-11 handover's 14 web collectors,
+  # /opt/data/handover/old-crawlers-2026-11-11). Paused = accepted, not yet
+  # landing: each lane opens when its port's first records land.
+  - name: estate-disclosure-statements
+    label: "Departmental disclosure statements for bills/SOPs/APs (port of docpipe-daily, disclosure.legislation.govt.nz)"
+    corpus: estate-disclosure_statements
+    status: paused
+
+  - name: estate-regulatory-impact
+    label: "Regulatory impact statements and analysis summaries (port of docpipe-daily, regulation.govt.nz)"
+    corpus: estate-regulatory_impact
+    status: paused
+
+  - name: estate-waitangi-tribunal
+    label: "Waitangi Tribunal reports (port of tribunals-capture)"
+    corpus: estate-waitangi_tribunal
+    status: paused
+
+  - name: estate-coronial
+    label: "Coronial decisions (port of docpipe-daily)"
+    corpus: estate-coronial
+    status: paused
+
+  - name: estate-environment-court
+    label: "Environment Court judgments (port of docpipe-daily)"
+    corpus: estate-environment_court
+    status: paused
+
+  - name: estate-district-court
+    label: "District Court judgments (port of docpipe-daily, districtcourts.govt.nz)"
+    corpus: estate-district_court
+    status: paused
+
+  - name: estate-disciplinary-tribunals
+    label: "Disciplinary tribunal decisions: LCDT, LCRO, READT, TDT (port of docpipe-daily, tribunals-capture)"
+    corpus: estate-disciplinary_tribunals
+    status: paused
+
+  - name: estate-watchdogs
+    label: "Watchdog reports: IPCA, Ombudsman, IGIS, Takeovers Panel (port of docpipe-daily)"
+    corpus: estate-watchdogs
+    status: paused
+
+  - name: estate-elections-documents
+    label: "Electoral Commission documents: donations, expenses, OIA (port of docpipe-daily, parties-capture)"
+    corpus: estate-elections_documents
+    status: paused
+
+  - name: estate-expenses
+    label: "MP and minister expenses (port of mp-expenses, minister-expenses-capture)"
+    corpus: estate-expenses
+    status: paused
+
+  - name: estate-party-sites
+    label: "Political parties' whole-site captures (port of party-sites-recapture)"
+    corpus: estate-party_sites
+    status: paused
+
+  - name: estate-companies-office-notices
+    label: "Registrar's director prohibition notices (port of companies-office-capture)"
+    corpus: estate-companies_office_notices
+    status: paused
+
+  - name: estate-legislation
+    label: "Legislation.govt.nz instruments (port of legislation-backfill)"
+    corpus: estate-legislation
+    status: paused
+
+  - name: estate-motu
+    label: "Motu working papers (port of motu-repec-capture)"
+    corpus: estate-motu
+    status: paused
+
+discrepancies:
+  - lane: parliament-written-questions
+    fact: "683,770 ledger rows resolve to 683,524 unique record ids (re-record rows share ids); the source reported 683,552 at enumeration"
+  - lane: parliament-written-questions
+    fact: "corpus date axis is lastModified (2024-10-11 to 2026-10-06); questionReleasedDate spans 2003-02-11 to 2026-10-01"
+  - lane: parliament-bills-historical
+    fact: "3,542 rows held against 3,543 reported by the source; 1 row unaccounted"
+  - lane: parliament-papers
+    fact: "39,053 rows reported by the source; rows on API page 40 return HTTP 500 on every route and are re-probed on each run (recorded in the doc fetch manifest)"
+  - lane: courts-capture
+    fact: "8 malformed rows in the HPDT source index were not ingested"

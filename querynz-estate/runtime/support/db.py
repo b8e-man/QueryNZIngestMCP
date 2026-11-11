@@ -112,6 +112,19 @@ for _t in ("date", "DATE"):
 for _t in ("boolean", "bool", "BOOLEAN", "BOOL"):
     sqlite3.register_converter(_t, _conv_bool)
 
+_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}")
+
+
+def _conv_expr_cell(v):
+    """Expressions lose their declared type: SQLite reports no decltype for
+    max(at)/coalesce(at,...), so PARSE_DECLTYPES never fires and the driver
+    hands back raw TEXT where psycopg2 would hand back a datetime through
+    the aggregate. Convert datetime-shaped strings back. The estate schema
+    never stores datetimes in plain text columns."""
+    if isinstance(v, str) and _TS_RE.match(v):
+        return _conv_ts(v)
+    return v
+
 
 def _regexp(pattern, value):
     if value is None:
@@ -148,17 +161,25 @@ class _Cursor:
     def __init__(self, cur):
         self._cur = cur
 
+    @staticmethod
+    def _row(r):
+        if r is None:
+            return None
+        return tuple(_conv_expr_cell(v) for v in r)
+
     def fetchone(self):
-        return self._cur.fetchone()
+        return self._row(self._cur.fetchone())
 
     def fetchall(self):
-        return self._cur.fetchall()
+        return [self._row(r) for r in self._cur.fetchall()]
 
     def fetchmany(self, n=None):
-        return self._cur.fetchmany(n) if n else self._cur.fetchmany()
+        rows = self._cur.fetchmany(n) if n else self._cur.fetchmany()
+        return [self._row(r) for r in rows]
 
     def __iter__(self):
-        return iter(self._cur)
+        for r in self._cur:
+            yield self._row(r)
 
     @property
     def rowcount(self):

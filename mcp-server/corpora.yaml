@@ -498,6 +498,40 @@ corpora:
     record_file: /opt/data/querynz-estate/sources/tenancy_tribunal/manifest.jsonl
     path_root: /opt/data/querynz-estate/sources/tenancy_tribunal
     freshness_sla_hours: 720
+
+  estate-news:
+    label: "NZ news outlets, raw page captures (news-scrapers, 67 outlets; NZME capture-and-hold, ruling 115/169)"
+    source_category: news-media
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls]
+    file_fields: [file]
+    doc_type_field: kind
+    # one append-only manifest per outlet; new outlets appear without a
+    # restart. Arrival order = ingest order (sidecar-stable seq), new
+    # records always land at the end of the feed.
+    record_file: /opt/data/news-scrapers/data/*/manifest.jsonl
+    path_root: /opt/data/news-scrapers/data
+    freshness_sla_hours: 24
+
+  estate-tenders:
+    label: "MBIE GETS open data — award-notice CSVs and dictionary, verbatim by hash (estate ask 2026-11-11)"
+    source_category: procurement-notice
+    kind: records
+    id_field: sha256
+    date_field: fetched_at
+    title_field:
+      - "source_file"
+      - "url"
+    text_fields: [url]
+    file_fields: [file]
+    record_file: /opt/data/gets-scraper/data/external_manifest.jsonl
+    path_root: /opt/data/gets-scraper/data
+    freshness_sla_hours: 2160
   estate-worksafe:
     label: "WorkSafe prosecutions and undertakings (estate capture, handed over 2026-11-05)"
     source_category: regulator-enforcement

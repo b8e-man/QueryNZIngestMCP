@@ -161,6 +161,38 @@ def names_of(sha256: str, conn) -> list:
     return [r[0] for r in conn.execute("SELECT name FROM docs.names WHERE sha256 = %s ORDER BY seen_at, name", (sha256,))]
 
 
+def find_by_name(name: str, conn) -> list:
+    """Shas the store holds under this name (for captures the name is the
+    URL); oldest-seen first. The register adopt path's lookup."""
+    return [r[0] for r in conn.execute(
+        "SELECT sha256 FROM docs.names WHERE name = %s ORDER BY seen_at, sha256", (name,))]
+
+
+def names_for(conn, shas) -> list:
+    """(sha256, name, kind, fetched_at) rows for the given shas, fetched_at
+    an aware datetime or None — whatever the store hands back, so callers can
+    sort with (ts or datetime.min) safely."""
+    shas = list(dict.fromkeys(shas))
+    if not shas:
+        return []
+    marks = ",".join(["%s"] * len(shas))
+    out = []
+    for r in conn.execute(
+            f"SELECT n.sha256, n.name, n.kind, d.fetched_at FROM docs.names n "
+            f"LEFT JOIN docs.documents d ON d.sha256 = n.sha256 "
+            f"WHERE n.sha256 IN ({marks})", shas):
+        ts = r[3]
+        if isinstance(ts, str):
+            try:
+                ts = dt.datetime.fromisoformat(ts.replace(" ", "T", 1))
+            except ValueError:
+                ts = None
+        if isinstance(ts, dt.datetime) and ts.tzinfo is None:
+            ts = ts.replace(tzinfo=dt.timezone.utc)
+        out.append((r[0], r[1], r[2], ts))
+    return out
+
+
 def read_bytes(ref_or_sha, root: str = None) -> bytes:
     sha = ref_or_sha.sha256 if isinstance(ref_or_sha, DocumentRef) else ref_or_sha
     with open(path_for(sha, root), "rb") as f:

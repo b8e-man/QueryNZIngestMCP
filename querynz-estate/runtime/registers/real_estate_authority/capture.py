@@ -47,6 +47,7 @@ import sys
 import os
 import time
 import urllib.parse
+from zoneinfo import ZoneInfo
 
 import support.fetchgate as fg
 
@@ -61,6 +62,7 @@ FIRST_YEAR = 2010             # the database's year filter starts here
 AT_RISK_BODY = "Complaints Assessment Committee Hearing"
 FLOOR_S = 5.0
 OFF_PEAK = (22, 6)
+NZ = ZoneInfo("Pacific/Auckland")   # the lane's hours are NZ local (the box's clock is UTC)
 STOP_AFTER_FAILURES = 3
 SERVER_ERRORS = (500, 502, 503, 504)   # the server's own error, unless the page is a challenge
 REST_S = 60.0                         # the gap after a failed read, before the next request
@@ -126,7 +128,8 @@ def complaint_number(url: str):
 
 def off_peak(now_local: dt.datetime) -> bool:
     start, end = OFF_PEAK
-    return now_local.hour >= start or now_local.hour < end
+    h = now_local.astimezone(NZ).hour
+    return h >= start or h < end
 
 
 def complete_years(rows) -> set:
@@ -226,7 +229,7 @@ class Run:
         self.pacer = pacer or fg.Pacer()
         self.gate_pacer = gate_pacer
         self.clock = clock or time.monotonic
-        self.now_local = now_local or (lambda: dt.datetime.now().astimezone())
+        self.now_local = now_local or (lambda: dt.datetime.now(NZ))
         self.budget_s, self.max_items, self.anytime, self.log = budget_s, max_items, anytime, log
         self.started = self.clock()
         self.failures = 0

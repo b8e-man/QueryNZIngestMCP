@@ -28,7 +28,29 @@ BASE = "/opt/data/gets-scraper"
 EXT = os.path.join(BASE, "data", "external")
 RECORDS_F = os.path.join(BASE, "records.jsonl")
 DONE_F = os.path.join(BASE, "data", "external_done.jsonl")
+MANIFEST_F = os.path.join(BASE, "data", "external_manifest.jsonl")
+MISSING_F = os.path.join(BASE, "data", "external_missing.jsonl")
 PROXY_F = "/opt/data/beehive-scraper/proxy.json"
+
+# The catalogue package the estate asked for (estate-tenders@files-9-held-
+# 2026-08-14): every CSV and the dictionary, served verbatim by hash and
+# re-checked at the Ministry's cadence (about quarterly). A wanted file is
+# re-fetched even when seen before: it lands again ONLY when its bytes change
+# (a new sha256 row in the manifest — one row per file version).
+WANTED_BASE = ("https://www.mbie.govt.nz/assets/Data-Files/"
+               "NZGPP-GETS-Open-Data/")
+WANTED_FILES = [
+    "gets-award-notices.csv",
+    "gets-supplier-data.csv",
+    "gets-region-by-tender.csv",
+    "gets-product-categories.csv",
+    "gets-award-notices-historic.csv",
+    "gets-supplier-data-historic.csv",
+    "gets-region-by-tender-historic.csv",
+    "gets-product-categories-historic.csv",
+    "schema-and-documentation.xlsx",
+]
+WANTED_URLS = [WANTED_BASE + f for f in WANTED_FILES]
 
 UA = ("Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 "
       "Firefox/128.0")
@@ -53,6 +75,33 @@ def record(url, path, body, ctype, source):
         }, ensure_ascii=False) + "\n")
 
 
+def manifest_row(url, name, body, ctype, source):
+    """estate-tenders feed: one row per FILE VERSION (id = sha256 of the
+    bytes as served). Absolute `file` so the MCP serves it verbatim."""
+    sha = hashlib.sha256(body).hexdigest()
+    row = {"sha256": sha, "url": url, "kind": "bulk_dataset",
+           "content_type": ctype,
+           "file": os.path.join(EXT, name),
+           "bytes": len(body), "fetched_at": now_iso(),
+           "discovered_via": source}
+    with open(MANIFEST_F, "a") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return sha
+
+
+def manifest_shas():
+    """url -> set of sha256 already in the estate-tenders feed."""
+    seen = {}
+    if os.path.exists(MANIFEST_F):
+        for line in open(MANIFEST_F):
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            seen.setdefault(r.get("url"), set()).add(r.get("sha256"))
+    return seen
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--time-budget", type=int, default=110)
@@ -61,6 +110,8 @@ def main():
     os.makedirs(EXT, exist_ok=True)
 
     done = set()
+    held_shas = manifest_shas()
+    wanted_held = {u for u in WANTED_URLS if held_shas.get(u)}
     if os.path.exists(DONE_F):
         for line in open(DONE_F):
             try:
@@ -81,6 +132,7 @@ def main():
 
     from playwright.sync_api import sync_playwright
     fetched = 0
+    unchanged = 0
     fails = []
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -102,16 +154,14 @@ def main():
             u = m if m.startswith("http") else "https://www.mbie.govt.nz" + m
             if u not in links:
                 links.append(u)
-        # always include the known award-notices CSV
-        known = ("https://www.mbie.govt.nz/assets/Data-Files/"
-                 "NZGPP-GETS-Open-Data/gets-award-notices.csv")
-        if known not in links:
-            links.append(known)
+        # the wanted catalogue package first (re-checked for byte changes),
+        # then any other data file the listing offers
+        links = [u for u in WANTED_URLS if u not in links] + links
 
         for u in links:
             if time.time() - t0 > args.time_budget:
                 break
-            if u in done:
+            if u in done and u not in WANTED_URLS:
                 continue
             try:
                 u_src = "mbie_open_data"
@@ -155,18 +205,33 @@ def main():
                     continue
                 name = u.split("/")[-1].split("?")[0]
                 rel = os.path.join("external", name)
-                with open(os.path.join(BASE, "data", rel), "wb") as f:
-                    f.write(body)
-                record(u, rel, body,
-                       "application/octet-stream", u_src)
+                sha = hashlib.sha256(body).hexdigest()
+                if sha in (held_shas.get(u) or set()):
+                    # bytes unchanged since the version already landed —
+                    # no new manifest row (one row per file version)
+                    unchanged += 1
+                else:
+                    with open(os.path.join(BASE, "data", rel), "wb") as f:
+                        f.write(body)
+                    record(u, rel, body,
+                           "application/octet-stream", u_src)
+                    manifest_row(u, name, body,
+                                 "application/octet-stream", u_src)
+                    held_shas.setdefault(u, set()).add(sha)
+                    wanted_held.add(u)
+                    fetched += 1
                 with open(DONE_F, "a") as f:
                     f.write(json.dumps({"url": u, "status": "ok"}) + "\n")
-                fetched += 1
             except Exception as e:
                 fails.append(f"{u}: {str(e)[:60]}")
         browser.close()
 
-    print(f"mbie-bulk: fetched={fetched} fails={len(fails)}"
+    missing = [u.split("/")[-1] for u in WANTED_URLS if u not in wanted_held]
+    with open(MISSING_F, "w") as f:
+        for name in missing:
+            f.write(json.dumps({"file": name, "url": WANTED_BASE + name}) + "\n")
+    print(f"mbie-bulk: fetched={fetched} unchanged={unchanged} "
+          f"fails={len(fails)} missing={len(missing)}"
           + (f" ({'; '.join(fails[:3])})" if fails else ""))
     return 0
 

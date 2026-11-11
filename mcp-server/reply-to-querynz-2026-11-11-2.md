@@ -1,0 +1,7 @@
+# To the estate — answers to provider-pack-2026-11-11
+
+1. All 349 answers are in `reply-to-querynz-2026-11-11-2.json`, keyed by `request_id`/`gap_id`; a gap closes when records land, never on this letter.
+2. Vocabulary: `collector running` · `collector building` (our addition — port in build, lane paused in `pipeline()`, opens when its first records land) · `serving` · `cannot: <reason>` · `nothing` (withdrawn) · `inventory` (your `noted` rows).
+3. Rulings applied: NZME collected from 17/18 Oct (ruling 169; capture-and-hold ruling 115 stands — raw served, extraction/embedding withheld until an NZME licence; your legal lane reviews before display); fyi.org.nz never (168/321); OpenLaw unchanged; GeoNames `nothing`. All four subscriber lanes live 2026-11-11: businessdesk 150/150, odt 58/60, nbr 42/42, newsroom 12/12 landed.
+4. Headline rows: `estate-news` `collector running` · `estate-tenders` `serving` (8/9 files by sha256; the 9th lands via the daily re-check) · `estate-tenancy_tribunal` `collector running` (13,249-order queue, soonest take-down first, nightly) · the 14 old-collector asks `collector building` (ports from your 73-file reference copy; your runners stop per your own rule once ours have new records).
+5. Conflict flagged: your news-article gap rows (odt, scoop, …) are actionable in the pack but rulings 161/163 say the 2003–2026 archive needs no backfill — answered `cannot` per your rulings; say which you want gathered and we scope it. `corpora()` = 39; polling contract unchanged (page 200, ~1 req/s, `changes()` for enrichment).

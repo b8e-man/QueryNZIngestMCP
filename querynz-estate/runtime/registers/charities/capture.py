@@ -189,7 +189,8 @@ def page_keys(rows: list, key: str, after=None) -> list:
 
 def off_peak(now_local: dt.datetime) -> bool:
     start, end = OFF_PEAK
-    return now_local.hour >= start or now_local.hour < end
+    h = now_local.astimezone(NZ).hour
+    return h >= start or h < end
 
 
 def plan_pass(last_full_done, last_done_started, open_pass: bool, now: dt.datetime, changes: bool = True):
@@ -288,7 +289,7 @@ class Run:
         self.opener = opener or (lambda url, timeout: fg.open_url(url, timeout=timeout, positions_dir=POSITIONS))
         self.clock = clock or time.monotonic
         self.sleep = sleep or time.sleep
-        self.now_local = now_local or (lambda: dt.datetime.now().astimezone())
+        self.now_local = now_local or (lambda: dt.datetime.now(NZ))
         self.budget_s, self.max_pages, self.anytime, self.log = budget_s, max_pages, anytime, log
         self.sets = set(sets) if sets else None
         self.started = self.clock()

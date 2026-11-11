@@ -40,7 +40,13 @@ ENV = dict(os.environ,
            QV4_POSITIONS=os.environ.get("QV4_POSITIONS")
            or os.path.join(HERE, "docs", "legal", "positions"),
            DISPLAY=os.environ.get("DISPLAY") or ":99",
-           PLAYWRIGHT_BROWSERS_PATH="/opt/data/.cache/ms-playwright")
+           PLAYWRIGHT_BROWSERS_PATH="/opt/data/.cache/ms-playwright",
+           # poppler's pdftotext lives outside the system PATH and needs its
+           # own libs (grants lane crashed on FileNotFoundError without this)
+           PATH="/opt/data/tools/poppler/usr/bin:" + os.environ.get("PATH", ""),
+           LD_LIBRARY_PATH=("/opt/data/tools/poppler/usr/lib/x86_64-linux-gnu"
+                            + (":" + os.environ["LD_LIBRARY_PATH"]
+                               if os.environ.get("LD_LIBRARY_PATH") else "")))
 
 #: the handover's capture jobs, in firing order. The courts lane covers
 #: sources courts-jdo + courts-finder (--jdo) and courts-era (--era); the
@@ -104,6 +110,14 @@ def load_jobs():
         "command": ["python", "wayback_rescue.py", "--budget-s", "5400",
                     "--max-requests", "900"],
         "at_utc": ["11:30"]}
+    # written-questions attachment backfill (route cracked 2026-11-05:
+    # questions.parliament.nz/download/writtenquestion/{attachmentId}).
+    # Our VPS IP is blackholed on that host, so the fetcher rides the
+    # rotating residential pool; resume-safe via its manifest + flock.
+    out["local-wq-attachments"] = {
+        "command": ["python", "/opt/data/parliament-scraper/wq_attach_fetch.py",
+                    "--budget-s", "3500", "--pace", "4"],
+        "at_utc": ["10:30"]}
     return out
 
 
@@ -122,13 +136,45 @@ def n_refusals() -> int:
         return 0
 
 
-def run_one(name: str, spec: dict):
+#: a fired-but-due-long-ago slot is NOT run at a random hour: the pattern is
+#: once-nightly, so a missed slot waits for its next occurrence (22 October
+#: estate lesson: out-of-window runs get refused and fail noisily).
+STALE_S = 600
+
+RUNNING = {}           # name -> (Popen, lock-file, started, refusals-before)
+
+
+def reap():
+    """Collect finished runs: alert bookkeeping happens at exit, never in
+    the firing loop (a fired run may take hours)."""
+    for name in list(RUNNING):
+        p, lock, started, before = RUNNING[name]
+        code = p.poll()
+        if code is None:
+            if (dt.datetime.now().astimezone() - started
+                    > dt.timedelta(hours=23)):
+                p.kill()
+                alert(f"{name}: killed after 23h")
+            continue
+        del RUNNING[name]
+        lock.close()
+        after = n_refusals()
+        if after > before:
+            alert(f"{name}: blocked")
+        if code != 0:
+            alert(f"{name}: run failed (exit {code})")
+        print(f"{name}: exit {code}, {after - before} new holds")
+
+
+def run_one(name: str, spec: dict, wait: bool = False):
     os.makedirs(LOCKDIR, exist_ok=True)
     os.makedirs(LOGDIR, exist_ok=True)
     lock = open(os.path.join(LOCKDIR, name + ".lock"), "w")
     try:
         import fcntl
-        if not fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB):
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
             print(f"{name}: already running; not fired")
             return
     except ImportError:
@@ -136,25 +182,37 @@ def run_one(name: str, spec: dict):
     cmd = list(spec["command"])
     if cmd and cmd[0] == "python":
         cmd[0] = PY
+    # browser lanes need the Xvfb display — if it died, every launch fails
+    # with "The platform failed to initialize" (2026-11-07: three lanes)
+    try:
+        subprocess.run(["pgrep", "-x", "Xvfb"], capture_output=True, check=True)
+    except Exception:
+        subprocess.Popen(["setsid", "Xvfb", ":99", "-screen", "0", "1280x900x24"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     started = dt.datetime.now().astimezone()
     before = n_refusals()
     logp = os.path.join(LOGDIR, name + ".log")
     try:
-        with open(logp, "a", encoding="utf-8") as log:
-            log.write(f"--- {started.isoformat(timespec='seconds')}\n")
-            log.flush()
-            p = subprocess.run(cmd, cwd=HERE, env=ENV, stdout=log,
-                               stderr=subprocess.STDOUT, timeout=23 * 3600)
-        code = p.returncode
+        log = open(logp, "a", encoding="utf-8")
+        log.write(f"--- {started.isoformat(timespec='seconds')}\n")
+        log.flush()
+        p = subprocess.Popen(cmd, cwd=HERE, env=ENV, stdout=log,
+                             stderr=subprocess.STDOUT)
     except Exception as exc:  # noqa: BLE001 — a scheduler crash is an alert
-        code = -1
         alert(f"{name}: scheduler could not run it ({type(exc).__name__}: {str(exc)[:200]})")
-    after = n_refusals()
-    if after > before:
-        alert(f"{name}: blocked")
-    if code != 0:
-        alert(f"{name}: run failed (exit {code})")
-    print(f"{name}: exit {code}, {after - before} new holds")
+        return
+    if wait:
+        code = p.wait()
+        log.close()
+        after = n_refusals()
+        if after > before:
+            alert(f"{name}: blocked")
+        if code != 0:
+            alert(f"{name}: run failed (exit {code})")
+        print(f"{name}: exit {code}, {after - before} new holds")
+    else:
+        RUNNING[name] = (p, lock, started, before)
+        print(f"{name}: fired (pid {p.pid})")
 
 
 def main(argv):
@@ -166,12 +224,13 @@ def main(argv):
         return 0
     if "--run" in argv:
         name = argv[argv.index("--run") + 1]
-        run_one(name, jobs[name])
+        run_one(name, jobs[name], wait=True)
         return 0
     last = {}
     print(f"scheduler up: {len(jobs)} jobs")
     while True:
         now = dt.datetime.now(dt.timezone.utc)
+        reap()
         for name, spec in jobs.items():
             fires = list(spec.get("at_utc") or [])
             if "random_window" in spec:
@@ -191,8 +250,11 @@ def main(argv):
                 hh, mm = hhmm.split(":")
                 fire = now.replace(hour=int(hh), minute=int(mm), second=0,
                                    microsecond=0)
-                if now >= fire and last.get(name, dt.datetime.min.replace(
-                        tzinfo=dt.timezone.utc)) < fire:
+                if (now >= fire
+                        and (now - fire).total_seconds() < STALE_S
+                        and name not in RUNNING
+                        and last.get(name, dt.datetime.min.replace(
+                            tzinfo=dt.timezone.utc)) < fire):
                     last[name] = now
                     print(f"firing {name} at {hhmm} UTC")
                     run_one(name, spec)

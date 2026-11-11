@@ -58,7 +58,15 @@ def main():
             state = json.load(open(STATE_F))
         except Exception:
             pass
-    done_slices = set(tuple(x) for x in state.get("done", []))
+    # state["done"] holds flat strings ("prefix|y0-y1"); older writers saved
+    # char-tuples via tuple(x) on strings. Normalise everything to str so the
+    # membership test and sorted() both work (tuple/str mix crashed sorted()).
+    done_slices = set()
+    for x in state.get("done", []):
+        if isinstance(x, (list, tuple)):
+            done_slices.add("|".join(str(i) for i in x))
+        else:
+            done_slices.add(str(x))
 
     found = {}
     walked = 0

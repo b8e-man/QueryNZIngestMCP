@@ -341,6 +341,10 @@ class Run:
                 self.fetch(lst)
         except Stop as exc:
             self.stopped = f"stopped: {exc}"
+        except fg.Refused as exc:
+            # the host is held (nothing is asked of it): a clean stop, not a
+            # crash — 2026-11-07 the uncaught refusal exited 1 every night
+            self.stopped = f"stopped: held: {exc}"
         return {**self.counts, "stopped": self.stopped}
 
 
@@ -348,6 +352,9 @@ def outcome(out: dict):
     """(ok, the last words of the run's line): a polite early stop after
     landing something is green; red only when it stopped with nothing landed."""
     stopped = out["stopped"]
+    if stopped.startswith("stopped: held:"):
+        # a held host is the gate's decision, not the lane's failure
+        return True, stopped[len("stopped:"):].strip()
     if not stopped.startswith("stopped:"):
         return True, stopped or "done"
     if out["pages"] or out["landed"] or out["already_held"] or out["docs"]:

@@ -85,7 +85,7 @@ def main():
     pages_done = 0
 
     try:
-        raw = fetch(CDX_LISTS.format(p=0))
+        raw = fetch(CDX_LISTS.format(p=0), timeout=min(45, args.time_budget))
         rows = json.loads(raw)
     except Exception as e:
         print(f"GETS history-enum: CDX unavailable ({str(e)[:60]}) — retry next run")
@@ -107,7 +107,12 @@ def main():
         try:
             replay = f"https://web.archive.org/web/{ts}id_/{u}" if ts else \
                      f"https://web.archive.org/web/2id_/{u}"
-            body = fetch(replay).decode("utf-8", errors="replace")
+            # a single 45s hang could outlive the 120s cron window across
+            # three tries — cap each request to the remaining budget
+            remaining = args.time_budget - (time.time() - t0)
+            if remaining < 5:
+                break
+            body = fetch(replay, timeout=int(min(45, remaining))).decode("utf-8", errors="replace")
             for m in sorted(set(ID_RE.findall(body))):
                 rfx = int(m)
                 if rfx in known:
