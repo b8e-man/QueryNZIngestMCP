@@ -1680,6 +1680,10 @@ def asks_status(request_id: str | None = None) -> dict:
         reqs.setdefault(rid, {"request_id": rid, "amends": r.get("amends"),
                               "kind": r.get("kind"),
                               "received_at": r.get("received_at"), "sections": []})
+    for rid, _section in latest:
+        # ledger-only threads (hand-carried requests) show too
+        reqs.setdefault(rid, {"request_id": rid, "amends": None, "kind": None,
+                              "received_at": None, "sections": []})
     for (rid, section), r in sorted(latest.items()):
         if rid not in reqs:
             continue
