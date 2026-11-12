@@ -393,6 +393,21 @@ corpora:
     record_file: /opt/data/querynz-estate/sources/disclosures/manifest.jsonl
     path_root: /opt/data/querynz-estate/sources/disclosures
     freshness_sla_hours: 720
+  estate-elections:
+    label: "Electoral Commission documents — results, registers, returns, OIA releases, reports, statistics and media (estate-collect@2026-11-13b; donation disclosures land in estate-disclosures and candidate returns in estate-candidate_returns)"
+    source_category: election-documents
+    kind: records
+    id_field: sha256
+    date_field: [fetched_at, landed_at]
+    title_field:
+      - "names[0]"
+      - "urls[0].url"
+    text_fields: [names, urls, listed]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/querynz-estate/sources/estate-elections/manifest.jsonl
+    path_root: /opt/data/querynz-estate/sources/estate-elections
+    freshness_sla_hours: 168
   estate-fma:
     label: "FMA warnings and enforcement actions (estate capture, handed over 2026-11-05)"
     source_category: regulator-enforcement
@@ -500,7 +515,7 @@ corpora:
     freshness_sla_hours: 720
 
   estate-news:
-    label: "NZ news outlets, raw page captures (news-scrapers, 67 outlets; NZME capture-and-hold, ruling 115/169)"
+    label: "NZ news outlets, raw page captures (news-scrapers, 67 outlets; NZME from 2026-10-17/18 collected + raw-served like every outlet (ruling 169, collect decision confirmed 2026-11-12); only extraction/embedding withheld (terms, ruling 115))"
     source_category: news-media
     kind: records
     id_field: sha256

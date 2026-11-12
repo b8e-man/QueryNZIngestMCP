@@ -36,6 +36,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import xml.etree.ElementTree as ET
 from datetime import datetime
 
 from bs4 import BeautifulSoup
@@ -43,7 +44,95 @@ from bs4 import BeautifulSoup
 from . import base
 
 SOURCE = "newsroom.co.nz"
-FEEDS = ["https://www.newsroom.co.nz/feed/rss"]
+FEEDS = ["https://www.newsroom.co.nz/feed/rss"]  # newest ~15 only - see discover()
+
+# The host serves a HashCash browser-check challenge (403 "Checking your
+# browser") to non-browser clients on /feed/ AND /sitemap.xml (measured
+# 2026-11-11 under load) — so discovery and fetches run through the browser,
+# which passes the challenge. 10s pacing (ARCHIVE's polite rate): the
+# challenge signals sensitivity and newsroom publishes ~10/day.
+POLITE_SLEEP = 10.0
+_SM = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
+_SITEMAP_INDEX="https://www.newsroom.co.nz/sitemap.xml"
+_SITEMAP_CHILD = "post-sitemap"
+
+
+async def discover(client) -> list[base.FeedItem]:
+    """Browser-walked sitemap discovery, per-URL lastmod as published_at.
+
+    RSS (FEEDS) carries only the newest ~15 items — it cannot serve a
+    catch-up window; plain httpx cannot even read the sitemaps (HashCash
+    challenge). One browser session walks the sitemap index and every
+    post-sitemap child; run_source applies the recency window (--hours) and
+    the pre-fetch dedup on top. Reuses the minted login session when
+    present; discovery also works logged out (sitemaps are public).
+    """
+    from playwright.async_api import async_playwright  # lazy — optional dep
+
+    def _xml(page_html: str, url: str) -> "ET.Element | None":
+        m = re.search(r"<(\w+:)?urlset|<(\w+:)?sitemapindex", page_html)
+        if not m:
+            print(f"  newsroom discover: not xml at {url} (challenge page?)")
+            return None
+        try:
+            return ET.fromstring(page_html.encode())
+        except ET.ParseError:
+            return None
+
+    out: list[base.FeedItem] = []
+
+    async def _fetch_xml(ctx, url: str) -> str:
+        # APIRequestContext: raw bytes even when Chromium XSL-transforms the
+        # same URL in its DOM (measured 2026-11-11: page.goto response.text()
+        # alternates raw/transformed for identical URLs in one session).
+        try:
+            r = await ctx.request.get(url, timeout=60000)
+            return await r.text()
+        except Exception:  # noqa: BLE001
+            return ""
+
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch(headless=True)
+        # fresh PUBLIC context: sitemaps need no login and the challenge
+        # triggers more on sessioned contexts (measured 2026-11-11)
+        ctx = await browser.new_context()
+        page = await ctx.new_page()
+        xml_src = await _fetch_xml(ctx, _SITEMAP_INDEX)
+        root = _xml(xml_src, _SITEMAP_INDEX)
+        if root is None:
+            # HashCash challenge: its proof-of-work JS reloads AFTER
+            # domcontentloaded (~2-4s). Wait for the reload, retry once.
+            await page.wait_for_timeout(6000)
+            xml_src = await _fetch_xml(ctx, _SITEMAP_INDEX)
+            root = _xml(xml_src, _SITEMAP_INDEX)
+        children = []
+        if root is not None:
+            children = [(loc.text or "").strip()
+                        for loc in root.iter(_SM + "loc") if loc.text]
+        children = [c for c in children if _SITEMAP_CHILD in c]
+        for child in children:
+            await asyncio.sleep(POLITE_SLEEP)
+            c_src = await _fetch_xml(ctx, child)
+            c_root = _xml(c_src, child)
+            if c_root is None:
+                await page.wait_for_timeout(6000)
+                c_src = await _fetch_xml(ctx, child)
+                c_root = _xml(c_src, child)
+            if c_root is None:
+                continue
+            for u in c_root.iter(_SM + "url"):
+                loc = (u.findtext(_SM + "loc") or "").strip()
+                lm = (u.findtext(_SM + "lastmod") or "").strip()
+                if not loc:
+                    continue
+                pub = None
+                try:
+                    pub = datetime.fromisoformat(lm.replace("Z", "+00:00")) if lm else None
+                except ValueError:
+                    pub = None
+                out.append(base.FeedItem(url=loc, published_at=pub))
+        await browser.close()
+    return out
 
 _TITLE_SEL = "h1.entry-title.entry-title--with-subtitle"
 _CONTENT_SEL = "div.entry-content"
@@ -197,7 +286,7 @@ async def fetch_authenticated(urls: list[str], *,
         for url in urls:
             await page.goto(url, wait_until="domcontentloaded", timeout=60_000)
             out.append((url, await page.content()))
-            await asyncio.sleep(base.POLITE_SLEEP)
+            await asyncio.sleep(POLITE_SLEEP)   # 10s — challenge-sensitive host
         await browser.close()
     return out
 

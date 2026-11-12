@@ -1468,6 +1468,243 @@ def res_readme() -> str:
         "the capture block). Text is computed on read; nothing is stored.\n")
 
 
+# ---------------------------------------------------------------------------
+# The estate channel (estate-channel@2026-11-13, ruling 175): requests and
+# replies through the MCP, not by hand. Append-only and never edited — either
+# side can replay the whole thread. Idempotent by request_id: a put of an id
+# already held with different content is refused (a change is a new id, with
+# amends naming the old). Nothing here ever carries a credential.
+#
+# Storage (all under BASE/channel/):
+#   inbox.jsonl        every asks_put (theirs -> us)
+#   outbox.jsonl       every message of ours (reply|question|report|refusal)
+#   bodies/<sha256>    bodies exactly as stored (canonical JSON bytes)
+#   attachments/<sha256>  attachments exactly as stored
+#   status.jsonl       OUR per-request/per-section state ledger (append-only)
+# ---------------------------------------------------------------------------
+
+CH_DIR = os.path.join(BASE, "channel")
+CH_INBOX = os.path.join(CH_DIR, "inbox.jsonl")
+CH_OUTBOX = os.path.join(CH_DIR, "outbox.jsonl")
+CH_STATUS = os.path.join(CH_DIR, "status.jsonl")
+CH_LOCK = threading.Lock()
+CH_KINDS = ("collect", "serve", "answer", "withdraw", "other")
+CH_MSG_KINDS = ("reply", "question", "report", "refusal")
+CH_STATES = ("received", "accepted", "building", "collecting", "blocked",
+             "done", "withdrawn")
+CH_ATTACH_MAX = 20 * 1024 * 1024
+
+
+def _ch_init():
+    for d in (CH_DIR, os.path.join(CH_DIR, "bodies"),
+              os.path.join(CH_DIR, "attachments")):
+        os.makedirs(d, exist_ok=True)
+
+
+def _ch_jsonl(path: str) -> list:
+    rows = []
+    if os.path.exists(path):
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        rows.append(json.loads(line))
+                    except Exception:
+                        pass
+    return rows
+
+
+def _ch_body(row: dict):
+    p = os.path.join(CH_DIR, "bodies", row.get("body_sha256", ""))
+    if os.path.exists(p):
+        with open(p, "rb") as f:
+            return json.loads(f.read().decode("utf-8", "replace"))
+    return None
+
+
+def _ch_canon(body: dict) -> bytes:
+    return json.dumps(body, sort_keys=True, ensure_ascii=False,
+                      separators=(",", ":")).encode("utf-8")
+
+
+@mcp.tool()
+def asks_put(request_id: str, kind: str, body: dict, amends: str | None = None,
+             attachments: list | None = None,
+             answers_message_id: str | None = None) -> dict:
+    """The estate posts one request or one amendment (estate-channel@2026-11-13).
+    Idempotent by request_id: re-putting identical content returns the original
+    receipt; the same id with different content is REFUSED (a change is a new id
+    with amends= naming the old). kind: collect | serve | answer | withdraw |
+    other. attachments: [{name, content_type, sha256, bytes_base64}] — each up
+    to 20 MB, sha256 verified as stored. answers_message_id names the
+    asks_get message_id this answers (questions our side sends)."""
+    t0 = time.time()
+    if kind not in CH_KINDS:
+        out = {"refused": True,
+               "reason": "unknown kind %r; valid kinds: %s" % (kind, ", ".join(CH_KINDS))}
+        meter("asks_put", {"request_id": request_id}, 0, (time.time() - t0) * 1000)
+        return out
+    _ch_init()
+    body_bytes = _ch_canon(body)
+    body_sha = hashlib.sha256(body_bytes).hexdigest()
+    att_rows = []
+    att_blobs = []
+    for a in (attachments or []):
+        try:
+            blob = base64.b64decode(a.get("bytes_base64") or "", validate=True)
+        except Exception:
+            out = {"refused": True, "reason": "attachment %r: bytes_base64 does not decode"
+                   % a.get("name")}
+            meter("asks_put", {"request_id": request_id}, 0, (time.time() - t0) * 1000)
+            return out
+        if len(blob) > CH_ATTACH_MAX:
+            out = {"refused": True, "reason": "attachment %r is %d bytes; the cap is 20 MB"
+                   % (a.get("name"), len(blob))}
+            meter("asks_put", {"request_id": request_id}, 0, (time.time() - t0) * 1000)
+            return out
+        sha = hashlib.sha256(blob).hexdigest()
+        if a.get("sha256") and a["sha256"].lower() != sha:
+            out = {"refused": True,
+                   "reason": "attachment %r: sha256 mismatch (stated %s, bytes hash to %s)"
+                   % (a.get("name"), a["sha256"], sha)}
+            meter("asks_put", {"request_id": request_id}, 0, (time.time() - t0) * 1000)
+            return out
+        att_rows.append({"name": a.get("name"), "content_type": a.get("content_type"),
+                         "sha256": sha, "size": len(blob)})
+        att_blobs.append((sha, blob))
+    with CH_LOCK:
+        idx = {}
+        for r in _ch_jsonl(CH_INBOX):
+            idx.setdefault(r["request_id"], r)
+        if request_id in idx:
+            old = idx[request_id]
+            if old.get("body_sha256") == body_sha and \
+                    [x["sha256"] for x in old.get("attachments", [])] == \
+                    [x["sha256"] for x in att_rows]:
+                out = {"request_id": request_id,
+                       "received_at": old["received_at"],
+                       "sha256": old["body_sha256"],
+                       "message_id": old["message_id"],
+                       "replayed": True}
+                meter("asks_put", {"request_id": request_id}, 1, (time.time() - t0) * 1000)
+                return out
+            out = {"refused": True,
+                   "reason": ("request_id %r is already held with different content; "
+                              "a change is a new request_id with amends=%r"
+                              % (request_id, request_id))}
+            meter("asks_put", {"request_id": request_id}, 0, (time.time() - t0) * 1000)
+            return out
+        for sha, blob in att_blobs:
+            p = os.path.join(CH_DIR, "attachments", sha)
+            if not os.path.exists(p):
+                with open(p, "wb") as f:
+                    f.write(blob)
+        bp = os.path.join(CH_DIR, "bodies", body_sha)
+        if not os.path.exists(bp):
+            with open(bp, "wb") as f:
+                f.write(body_bytes)
+        row = {"message_id": "in-" + hashlib.sha256(
+                   (request_id + body_sha).encode()).hexdigest()[:16],
+               "received_at": now_iso(),
+               "request_id": request_id,
+               "amends": amends,
+               "answers_message_id": answers_message_id,
+               "kind": kind,
+               "body_sha256": body_sha,
+               "body_size": len(body_bytes),
+               "attachments": att_rows}
+        with open(CH_INBOX, "a") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    out = {"request_id": request_id, "received_at": row["received_at"],
+           "sha256": body_sha, "message_id": row["message_id"],
+           "replayed": False, "attachments_stored": len(att_rows)}
+    meter("asks_put", {"request_id": request_id}, 1, (time.time() - t0) * 1000)
+    return out
+
+
+@mcp.tool()
+def asks_get(since: str | None = None,
+             request_id: str | None = None) -> dict:
+    """The estate reads what we have sent (estate-channel@2026-11-13): a list of
+    {message_id, request_id it answers, at, kind: reply|question|report|refusal,
+    body}, oldest first. since: ISO time or null; request_id: one thread only.
+    A question carries the points we need answered — answer with asks_put kind
+    "answer", naming the message_id."""
+    t0 = time.time()
+    _ch_init()
+    out = []
+    for r in _ch_jsonl(CH_OUTBOX):
+        if request_id is not None and r.get("request_id") != request_id:
+            continue
+        if since is not None and (r.get("at") or "") < since:
+            continue
+        out.append({"message_id": r.get("message_id"),
+                    "request_id": r.get("request_id"),
+                    "at": r.get("at"),
+                    "kind": r.get("kind"),
+                    "body": _ch_body(r)})
+    meter("asks_get", {"request_id": request_id}, len(out), (time.time() - t0) * 1000)
+    return {"messages": out, "count": len(out)}
+
+
+@mcp.tool()
+def asks_status(request_id: str | None = None) -> dict:
+    """Where each request stands (estate-channel@2026-11-13): per request and
+    per section: state (received|accepted|building|collecting|blocked|done|
+    withdrawn), the corpus it lands in, records landed and newest record (read
+    live from the corpus), the last block or challenge met (host and time), and
+    the next run. request_id: one thread; omit for all."""
+    t0 = time.time()
+    _ch_init()
+    inbox = _ch_jsonl(CH_INBOX)
+    known = sorted({r["request_id"] for r in inbox} |
+                   {r.get("request_id") for r in _ch_jsonl(CH_STATUS)
+                    if r.get("request_id")})
+    if request_id is not None and request_id not in known:
+        out = {"error": "unknown request_id %r" % request_id,
+               "known_request_ids": known}
+        meter("asks_status", {"request_id": request_id}, 0, (time.time() - t0) * 1000)
+        return out
+    # latest ledger row per (request_id, section)
+    latest = {}
+    for r in _ch_jsonl(CH_STATUS):
+        if request_id is not None and r.get("request_id") != request_id:
+            continue
+        latest[(r.get("request_id"), r.get("section") or "request")] = r
+    reqs = {}
+    for r in inbox:
+        rid = r["request_id"]
+        if request_id is not None and rid != request_id:
+            continue
+        reqs.setdefault(rid, {"request_id": rid, "amends": r.get("amends"),
+                              "kind": r.get("kind"),
+                              "received_at": r.get("received_at"), "sections": []})
+    for (rid, section), r in sorted(latest.items()):
+        if rid not in reqs:
+            continue
+        rec = {"section": section, "state": r.get("state", "received"),
+               "corpus": r.get("corpus"),
+               "records_landed": None, "newest_record": None,
+               "last_block": r.get("last_block"), "next_run": r.get("next_run"),
+               "at": r.get("at")}
+        cname = r.get("corpus")
+        if cname and cname in CORPORA:
+            try:
+                fr = CORPORA[cname].freshness()
+                rec["records_landed"] = fr.get("records")
+                rec["newest_record"] = fr.get("newest_arrival")
+            except Exception:
+                pass
+        reqs[rid]["sections"].append(rec)
+    out = {"requests": list(reqs.values()),
+           "states": list(CH_STATES),
+           "count": len(reqs)}
+    meter("asks_status", {"request_id": request_id}, len(reqs),
+          (time.time() - t0) * 1000)
+    return out
+
+
 @mcp.custom_route("/health", methods=["GET"])
 async def health(request):
     from starlette.responses import JSONResponse
