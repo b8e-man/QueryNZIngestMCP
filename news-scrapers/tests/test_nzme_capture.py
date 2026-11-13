@@ -11,7 +11,7 @@ from newsscrapers import nzme  # noqa: E402
 from news import review_sources as rs  # noqa: E402
 
 
-def test_articles_keep_real_urls_and_drop_premium():
+def test_articles_keep_real_urls_including_premium():
     xml = """
     <urlset>
       <url><loc>https://www.nzherald.co.nz/nz/christchurch/some-story/235E2B7LFFAU3LTE5NIS4YKTOM/</loc></url>
@@ -21,8 +21,9 @@ def test_articles_keep_real_urls_and_drop_premium():
     </urlset>"""
     got = nzme._articles(xml)
     assert "235E2B7LFFAU3LTE5NIS4YKTOM/" in got[0]
-    assert len(got) == 2                       # two real articles
-    assert not any("/premium/" in u for u in got)  # paywalled dropped
+    assert len(got) == 3                       # three real articles
+    # premium kept since 2026-11-13 (measured: served in full as fetched)
+    assert any("/premium/" in u for u in got)
     assert not any(u.endswith("/some-section/") for u in got)  # section index dropped
 
 

@@ -64,8 +64,15 @@ _INDEX = ("https://www.nzherald.co.nz/arc/outboundfeeds/sitemap-index/"
 _LATEST = ("https://www.nzherald.co.nz/arc/outboundfeeds/sitemap/latest/"
            "?outputType=xml&_website={site}")
 
-# an NZME article URL ends in a 26-char Arc id; /premium/ is paywalled AND
-# robots-disallowed for '*', so it is dropped at discovery.
+# an NZME article URL ends in a 26-char Arc id. /premium/ was dropped at
+# discovery until 2026-11-13 (robots-disallowed + assumed paywalled) — then
+# MEASURED: 20 of 20 premium URLs in the latest sitemap served FULL bodies to
+# a plain anonymous fetch (550-14,842 chars; a login cookie jar changes
+# nothing server-side). Arthur's word stands behind the login route (creds
+# handed over 2026-11-13 = proceed on robots politely). Premium is now
+# accepted in BOTH paths and lands as served at the lane's polite pace. The
+# login itself is parked: nzme.env creds were rejected by the identity
+# service ("password or email address is incorrect", one attempt, held).
 # _ARC_TAIL is THE one Arc-id rule — the fresh path (_ARTICLE) and the archive
 # path (ARCHIVE["article_re"]) both build from it, so they cannot drift apart
 # (2026-08-30, the edited-together hazard folded; test_nzme_predicate pins the
@@ -79,8 +86,6 @@ def _articles(xml: str) -> list[str]:
     out = []
     for raw in _LOC.findall(xml):
         u = raw.replace("&amp;", "&").strip()
-        if "/premium/" in u:
-            continue                    # paywalled + robots-disallowed
         if _ARTICLE.match(u):
             out.append(u)
     return out
@@ -115,8 +120,8 @@ MASTHEADS = ("nzh", "viva", "bay-of-plenty-times", "hawkes-bay-today",
 
 # Depth lane (ruling 28 / ruling 115 "get it all"): walk EVERY masthead's
 # sitemap-index, oldest sub-sitemap first, resuming across the whole network
-# (sub-sitemap URLs carry _website= so one `done` set spans all 14). /premium/
-# is dropped by article_re + the _articles filter at fetch. The nzme-archive-
+# (sub-sitemap URLs carry _website= so one `done` set spans all 14). Premium
+# joins both paths since 2026-11-13 (measured served in full as fetched). The nzme-archive-
 # backfill timer runs this in bounded chunks until the ~140k dated sub-sitemaps
 # are exhausted.
 ARCHIVE = {
@@ -126,11 +131,10 @@ ARCHIVE = {
     # days. `sitemap\d?` matches all three shapes — an earlier `sitemap2?`
     # silently dropped the entire back-catalogue.
     "sitemap_re": r"/sitemap\d?/\d{4}-\d{2}-\d{2}/",
-    # ends in a 26-char Arc id AND is not under /premium/ (paywalled + robots-
-    # disallowed for '*'): the negative lookahead drops premium in the archive
-    # path, matching _articles() on the fresh path — the Arc-id tail is the
-    # SHARED _ARC_TAIL constant, so the two paths cannot drift.
-    "article_re": r"^(?!.*/premium/).*" + _ARC_TAIL,
+    # ends in a 26-char Arc id. Premium accepted since 2026-11-13 (see the
+    # _ARC_TAIL note) — matching _articles() on the fresh path; the Arc-id tail
+    # is the SHARED _ARC_TAIL constant, so the two paths cannot drift.
+    "article_re": r"^.*" + _ARC_TAIL,
     "polite": POLITE_SLEEP,
     # NEWEST sub-sitemap first: the deep archive's pre-2005 dates are mostly
     # empty (regionals did not exist; even nzh's 1998 sub-sitemaps are empty),

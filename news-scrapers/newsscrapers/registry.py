@@ -114,6 +114,12 @@ REGISTRY: dict[str, Entry] = {
     # (Arthur, 2026-11-11, answering the QueryNZ estate's provider ask):
     # collect the NZME mastheads from 2026-10-18 01:15 NZ, when the old
     # estate's scrapers stopped. Capture-and-hold (ruling 115) stands.
+    # PREMIUM collected since 2026-11-13: measured 20/20 premium URLs serving
+    # FULL bodies to plain anon fetches (550-14,842 chars); Arthur's word
+    # behind the robots route (creds handed over 2026-11-13 = proceed
+    # politely). The login is PARKED: nzme.env creds rejected by the identity
+    # service (one attempt, held per house rule) — nothing needs them while
+    # bodies are served as they are.
     "nzherald.co.nz":            Entry("nzme", "news", "ready"),
     # §9 batch 3 (2026-07-17) — sitemap + HTML discovery (no RSS)
     "crux.org.nz":               Entry("crux", "news", "ready"),
