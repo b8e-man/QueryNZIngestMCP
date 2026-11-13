@@ -48,6 +48,12 @@ class Entry:
 
 REGISTRY: dict[str, Entry] = {
     "stuff.co.nz":        Entry("stuffconz", "news", "ready"),
+    # The Press (Christchurch, Stuff masthead) — added 2026-11-13 on Arthur's
+    # word ("Do it"), OUTSIDE the estate's 87-source media list; told to the
+    # estate under hermes-thepress@2026-11-13. Stuff masthead SPA + open story
+    # API (no login); Piano paywall stubs land as served. On-site archive back
+    # to 2023-12-13 (daily sitemaps; ARCHIVE walk joins the media schedule).
+    "thepress.co.nz":     Entry("thepress", "news", "ready"),
     "scoop.co.nz":        Entry("scoop", "news", "ready"),
     # ODT paywalled 2026-11-09 (measured: subscriber teaser only, body absent
     # from the HTML and the SSR payload). LIFTED 2026-11-11 by the subscriber
