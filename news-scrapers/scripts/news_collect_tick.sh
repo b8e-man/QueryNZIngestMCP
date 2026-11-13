@@ -13,6 +13,7 @@ set -a
 . /opt/data/evs-credentials/odt.env
 . /opt/data/evs-credentials/newsroom.env
 . /opt/data/evs-credentials/nzme.env
+. /opt/data/evs-credentials/stuff.env
 set +a
 cd /opt/data/news-scrapers/ingestion || exit 1
 OUT=$(PLAYWRIGHT_BROWSERS_PATH=/opt/data/.cache/ms-playwright \
