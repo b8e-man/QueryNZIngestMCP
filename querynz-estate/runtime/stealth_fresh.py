@@ -47,6 +47,10 @@ BLOCK_EXT_RE = re.compile(
 
 #: freshness surfaces — the hosts whose WAFs refuse the plain client.
 #: page_re: links walked as pages (listings/pagination); file_re: landed files.
+def _seeded(name):
+    pp = os.path.join(HERE, name)
+    return [u.strip() for u in open(pp) if u.strip()] if os.path.exists(pp) else []
+
 SURFACES = {
     "fma": {
         "starts": ["https://www.fma.govt.nz/library/warnings-and-alerts/",
@@ -77,7 +81,7 @@ SURFACES = {
         "depth": 2,
     },
     "grants": {
-        "starts": ["https://www.communitymatters.govt.nz/community-organisations-grants-scheme",
+        "starts": _seeded("grants_series_seeds.tsv") + ["https://www.communitymatters.govt.nz/community-organisations-grants-scheme",
                    "https://www.communitymatters.govt.nz/lottery-fund/lottery-fund-grants-made",
                    "https://www.communitymatters.govt.nz/community-led-development-programme/community-led-development-programme-202526-record-of-grants",
                    "https://www.communitymatters.govt.nz/community-led-development-programme/community-led-development-programme-202425-record-of-grants",
