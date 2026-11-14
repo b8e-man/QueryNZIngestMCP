@@ -57,9 +57,17 @@ REGISTRY: dict[str, Entry] = {
     # The Press (Christchurch, Stuff masthead) — added 2026-11-13 on Arthur's
     # word ("Do it"), OUTSIDE the estate's 87-source media list; told to the
     # estate under hermes-thepress@2026-11-13. Stuff masthead SPA + open story
-    # API (no login); Piano paywall stubs land as served. On-site archive back
-    # to 2023-12-13 (daily sitemaps; ARCHIVE walk joins the media schedule).
+    # API; completeness MEASURED (anon bodies = logged-in bodies, 15/15).
+    # On-site archive back to 2023-12-13 (ARCHIVE walk joins the media
+    # schedule). Platform facts + suite map: newsscrapers/stuffmasthead.py.
     "thepress.co.nz":     Entry("thepress", "news", "ready"),
+    # The Post (Wellington) + Waikato Times — the rest of the Stuff masthead
+    # suite (2026-11-13 "full suite" ruling): thepost carries the Taranaki
+    # Daily News, Manawatu Standard and Sunday Star-Times sections; every
+    # regional title 301s into a section of these hosts (map in
+    # stuffmasthead.py) so the three hosts' sitemaps cover the whole suite.
+    "thepost.co.nz":      Entry("thepost", "news", "ready"),
+    "waikatotimes.co.nz": Entry("waikatotimes", "news", "ready"),
     "scoop.co.nz":        Entry("scoop", "news", "ready"),
     # ODT paywalled 2026-11-09 (measured: subscriber teaser only, body absent
     # from the HTML and the SSR payload). LIFTED 2026-11-11 by the subscriber
