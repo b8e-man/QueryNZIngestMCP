@@ -18,10 +18,16 @@ from __future__ import annotations
 import argparse
 import asyncio
 import importlib
+import os
 import sys
 
 from newsscrapers import base, streaks
 from newsscrapers.registry import REGISTRY, runnable
+
+# per-source wall-clock bound: one stuck outlet (a hung browser page, a slow
+# challenge loop) must cost this much at most and never eat the sweep. Tunable
+# for tests via NWS_SOURCE_TIMEOUT.
+SOURCE_TIMEOUT = int(os.environ.get("NWS_SOURCE_TIMEOUT") or 280)
 
 
 async def main() -> int:
@@ -50,7 +56,9 @@ async def main() -> int:
         mod = importlib.import_module(f"newsscrapers.{REGISTRY[name].module}")
         print(f"== {name} ({why})")
         try:
-            stats = await base.run_source(mod, hours=args.hours, limit=args.limit, dry=args.dry)
+            stats = await asyncio.wait_for(
+                base.run_source(mod, hours=args.hours, limit=args.limit, dry=args.dry),
+                timeout=SOURCE_TIMEOUT)
             print(f"   {stats}")
             if not args.dry:
                 streaks.record(runs, name, failed=False)
