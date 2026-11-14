@@ -69,7 +69,9 @@ def main():
                 break
             wave = batch[i:i + args.workers]
             i += args.workers
-            futs = {ex.submit(ingest, [u], deadline=deadline): u for u in wave}
+            futs = {ex.submit(ingest, [u], deadline=deadline,
+                              final_attempt=attempts.get(u, 0) >= 1): u
+                    for u in wave}
             try:
                 for fut in as_completed(futs, timeout=max(2, remaining)):
                     try:

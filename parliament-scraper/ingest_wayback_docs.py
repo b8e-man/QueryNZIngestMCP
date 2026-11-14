@@ -92,6 +92,26 @@ USE_PROXY = [True]    # ACTIVATED 2026-10-25: Wayback 429-throttles the VPS IP
 _PROXY_URL = [None]
 _BROKEN = [False]     # proxy infra failure -> fall back to direct for this tick
 
+# Pure tracking params as seen on as-shared links (social/newsletters). The
+# page under its CANONICAL address is what Wayback's crawler actually
+# captured — URLs with trackers attached are rarely archived as-is, which is
+# the root cause of the 2026-11-15 empty-record report: CDX for the as-shared
+# address returned only post-2025 challenge stubs, so nothing real could
+# ever be saved yet the URL was marked terminal.
+TRACK_PARAMS = {"utm_source", "utm_medium", "utm_campaign", "utm_term",
+                "utm_content", "fbclid", "gclid", "_ga", "ref"}
+
+WB_WEB = CDX.rsplit("/cdx/", 1)[0] + "/web"
+
+
+def canonical_url(url):
+    """Strip pure tracking params (only for the CDX/fetch address; the record
+    keeps the original url as its identity)."""
+    parts = urllib.parse.urlsplit(url)
+    q = [(k, v) for k, v in urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+         if k.lower() not in TRACK_PARAMS]
+    return urllib.parse.urlunsplit(parts._replace(query=urllib.parse.urlencode(q)))
+
 
 def _proxy_url():
     """Build the IPRoyal rotating endpoint once per process. Session token is
@@ -147,7 +167,7 @@ def fetch(url, tries=3, deadline=None):
         time.sleep(30)
 
 
-def ingest(urls, out_dir=OUT, deadline=None):
+def ingest(urls, out_dir=OUT, deadline=None, final_attempt=False):
     pages_dir = os.path.join(out_dir, "pages")
     os.makedirs(pages_dir, exist_ok=True)
     docs_f = os.path.join(out_dir, "documents.jsonl")
@@ -162,6 +182,17 @@ def ingest(urls, out_dir=OUT, deadline=None):
         if ts_list is None:
             with open(man_f, "a") as f:
                 f.write(json.dumps({"url": url, "kind": "cdx-failed",
+                                    "ts": datetime.now(timezone.utc).isoformat(
+                                        timespec="seconds")}) + "\n")
+            continue
+        if not ts_list:
+            # CDX answered: nothing was ever archived at this address.
+            # Land terminal WITH the reason — never an empty record with no
+            # explanation (estate-improvements practice 1, 2026-11-15).
+            with open(man_f, "a") as f:
+                f.write(json.dumps({"url": url, "kind": "doc",
+                                    "doc_type": dtype, "snapshots": 0,
+                                    "reason": "gone",
                                     "ts": datetime.now(timezone.utc).isoformat(
                                         timespec="seconds")}) + "\n")
             continue
@@ -214,16 +245,70 @@ def ingest(urls, out_dir=OUT, deadline=None):
                 break    # latest real capture stored; older ones not needed raw
         if deadline and time.time() > deadline - 3:
             return   # unmanifested on purpose: retried next tick
+        # canonical-address fallback: as-shared URLs (tracking params) are
+        # rarely archived as-is; the canonical page often has real
+        # pre-challenge captures. Fetch the newest real one into THIS record
+        # (url stays the identity; capture_url notes what was fetched).
+        if not saved and not (deadline and time.time() > deadline - 35):
+            canon = canonical_url(url)
+            if canon != url:
+                canon_list = snapshots(canon, deadline=deadline)
+                for cts in sorted((t for t in (canon_list or [])
+                                   if t < recent_cutoff), reverse=True)[:3]:
+                    if deadline and time.time() > deadline - 8:
+                        break
+                    csnap = WB_WEB + "/" + cts + "id_/" + canon
+                    try:
+                        body = fetch(csnap, deadline=deadline)
+                    except Exception:
+                        continue
+                    view = decompress(body)
+                    m = re.search(rb"<title[^>]*>(.*?)</title>",
+                                  view[:50000], re.S | re.I)
+                    title = (m.group(1).decode("utf-8", "replace").strip()[:200]
+                             if m else "")
+                    if (title == "Radware Page" or b"validate.perfdrive" in view[:3000]
+                            or b"SWUDNSAI" in view[:3000]):
+                        continue
+                    fname = f"{cts}-canon-{slug}.html"
+                    with open(os.path.join(pages_dir, fname), "wb") as f:
+                        f.write(body)
+                    with open(docs_f, "a") as f:
+                        f.write(json.dumps({
+                            "url": url, "doc_type": dtype, "ts": cts,
+                            "fetched_at": datetime.now(timezone.utc).isoformat(
+                                timespec="seconds"),
+                            "snapshot_url": csnap,
+                            "capture_url": canon,
+                            "sha256": hashlib.sha256(body).hexdigest(),
+                            "bytes": len(body), "html_title": title,
+                            "content_encoding": "gzip" if view is not body else "identity",
+                            "status": "ok", "path": f"pages/{fname}",
+                        }, ensure_ascii=False) + "\n")
+                    saved = True
+                    break
         # terminal "doc" only when we proved the outcome; all-throttle passes
-        # get "attempt" so a 429 storm can never silently burn a URL
-        terminal = saved or (challenged_any and not any_failed)
+        # get "attempt" so a 429 storm can never silently burn a URL.
+        # Unreadable outcomes land WITH a reason (practice 1, 2026-11-15):
+        # challenged = every archived capture was a challenge stub;
+        # blocked    = fetches failed past the retry budget (final attempt).
+        reason = None
+        if not saved:
+            if challenged_any:
+                reason = "challenged"
+            elif final_attempt:
+                reason = "blocked"
+        terminal = saved or reason is not None
+        mrow = {"url": url,
+                "kind": "doc" if terminal else "attempt",
+                "doc_type": dtype,
+                "snapshots": len(ts_list),
+                "ts": datetime.now(timezone.utc).isoformat(
+                    timespec="seconds")}
+        if reason:
+            mrow["reason"] = reason
         with open(man_f, "a") as f:
-            f.write(json.dumps({"url": url,
-                                "kind": "doc" if terminal else "attempt",
-                                "doc_type": dtype,
-                                "snapshots": len(ts_list),
-                                "ts": datetime.now(timezone.utc).isoformat(
-                                    timespec="seconds")}) + "\n")
+            f.write(json.dumps(mrow) + "\n")
 
 
 def self_test():
@@ -261,9 +346,10 @@ def self_test():
         "size": len(body) > 5000,
         "real_title": ok[0].get("html_title", "") not in ("", "Radware Page"),
         "no_challenge_markers": b"validate.perfdrive" not in body[:3000],
-        "challenge_filter_worked": any(
-            r["status"] == "challenged_snapshot" and "Radware" in r.get("html_title", "")
-            for r in rows),
+        # the challenge-era URL may serve a Radware stub (filtered) OR 404
+        # now (Wayback purges stub captures) — the contract is: no fake ok.
+        "challenge_filtered": any(
+            r["status"] != "ok" and r["url"].endswith("Trident/") for r in rows),
     }
     print("checks:", checks)
     if not all(checks.values()):

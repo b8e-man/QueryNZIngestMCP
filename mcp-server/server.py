@@ -468,6 +468,11 @@ class Corpus:
                 old = self._by_id[rid]
                 if row.get("fetched_at"):
                     old["arrived"] = row["fetched_at"]
+                if row.get("reason") and not old.get("fields", {}).get("reason"):
+                    # append-only repair (2026-11-15 practice 1): a reasoned
+                    # terminal row must lift its why onto the served record
+                    old.setdefault("fields", {})["reason"] = row["reason"]
+                    old["updated_at"] = now_iso()
                 old["capture"] = dict(row)
                 if row.get("path") and pages:
                     f = _resolve_page(pages, row["path"])

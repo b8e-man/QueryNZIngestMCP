@@ -1,6 +1,6 @@
 # Handover — Query NZ estate channel + news fleet (LIVING DOC)
 
-Last updated: 2026-11-14T19:28Z (UTC).
+Last updated: 2026-11-14T20:05Z (UTC).
 
 Audience: a model picking this up cold to review or take over the work. Everything below is
 verified against logs/ledgers (paths given); nothing here is aspirational.
@@ -39,6 +39,7 @@ follow-through work (4 one-shot cron jobs), and pushed all code.
 | Channel ledger (append-only; the contract record) | /opt/data/qnz-mcp/channel/{inbox,outbox,status}.jsonl + bodies/ (content-addressed by sha256) |
 | The 4 replies as posted | /opt/data/qnz-mcp/replies/*.json + build_replies_2026_11_14.py (mangle-safe builder) |
 | Channel contract + reply conventions | skill mcp/mcp-server-development → references/request-channel-contract.md |
+| Live review log (streamlining passes — living doc) | /opt/data/querynz-estate/review-log.md (first pass 2026-11-14 running on Kimi K3; brief: review-brief-2026-11-14.md) |
 | Tick-timeout fix pattern | skill ingestion-pipelines → references/no-agent-cron-script-timeouts.md (patched with this case) |
 | Server-side corpus rules | skill mcp/mcp-server-development (SKILL.md, design rules §) |
 

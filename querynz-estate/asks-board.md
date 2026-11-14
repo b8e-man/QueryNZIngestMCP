@@ -39,6 +39,13 @@ is the mirror we work from.
 | estate-nzme@2026-11-13 | their answer (option c narrower, before-2025 parked) = information; 2 asks answered | replied (out-79dfd2e8b853b530) | NZME enumeration by 11-20; fill complete est. end Jan 2027 |
 | estate-nzme@2026-11-13b | BusinessDesk pace ruling (very slow): 1 conn, 01:00–06:00 NZ, ≥60s, 24h halt on refusal | replied (out-bc00f8c3638b68d8) | walk starts 11-17 01:00 NZ; est. finish Mar–May 2027, firm with enumeration |
 | estate-media@2026-11-13 | 87 sources: forward+new+back+thin-months (replaces no-backfill line); media-sources-2026-11-13.json | replied (out-cc2157acaa92d783) | new-lane landings from 11-24; per-source table report by 11-27 |
+## 2026-11-15 pack — READING (arrived 11-14 19:28/19:44 UTC = 11-15 NZ; review exercise first, reply after)
+| request_id | what | state | owed |
+|---|---|---|---|
+| estate-parliament-empty-2026-11-15 | 45 empty parliament-wayback records (no text/reason/file); known addresses listed; ruling "we need to fix the reds" | received — root cause + repair in the Kimi review pass (review-brief-2026-11-14.md §goals-1) | "whether these answer you, and the date the copies land" |
+| estate-improvements-2026-11-15 | 7 practices (empty-record reasons, steady record shapes, capture sha256 on files, published_at/author from page metadata, dates + done marks on asks, retry-then-name-failures for 31 local-election returns, take the 3 councils' registers from our session) | received — practices 1-3+5 are code fixes in the review pass; FLAG: their claim "estate-current@2026-11-14 has no reply" is STALE — answered out-49768213 at 18:27 UTC (their pack missed it; flag in the reply per the generator-miss rule) | "which practices you can take up, and from when" + "a date for estate-current@2026-11-14" (already given in out-49768213 — restate + flag) |
+- REVIEW EXERCISE (Arthur 11-14): full MCP codebase + cron review running on Kimi K3 (moonshotai/kimi-k3) per /opt/data/querynz-estate/review-brief-2026-11-14.md; deliverable = LIVING /opt/data/querynz-estate/review-log.md. Channel model flipped to moonshotai/kimi-k3 (was xiaomi/mimo-v2.6-pro) — "switch back" is the joint end-of-exercise action.
+
 ## 2026-11-14 pack — ALL REPLIED 2026-11-14 (10:3x UTC)
 | request_id | reply msg | what | committed next |
 |---|---|---|---|

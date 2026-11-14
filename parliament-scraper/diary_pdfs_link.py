@@ -24,6 +24,7 @@ MANIFEST = os.path.join(DATA, "diary_pdfs_manifest.jsonl")
 by_url = {}
 by_base = {}
 by_resolved = {}
+meta = {}       # path -> (sha256, fetched_at) from the capture manifest
 missing_on_disk = 0
 for line in open(MANIFEST):
     m = json.loads(line)
@@ -35,6 +36,10 @@ for line in open(MANIFEST):
         continue
     by_url[m["url"]] = p
     by_base[urllib.parse.unquote(os.path.basename(m["url"].split("?")[0]))] = p
+    # every served file carries the sha256 it was captured by + fetched_at
+    # (estate-improvements practice 3, 2026-11-15)
+    if m.get("sha256"):
+        meta[p] = (m["sha256"], m.get("fetched_at") or "")
     if m.get("resolved_from"):
         by_resolved[m["resolved_from"]] = p
 
@@ -59,6 +64,14 @@ for line in open(DIARIES):
         stats["linked_basename"] += 1
     else:
         stats["unlinked"] += 1
+    mm = meta.get(r.get("path", ""))
+    if mm:
+        if not r.get("sha256"):
+            r["sha256"] = mm[0]
+            stats["sha_added"] += 1
+        if mm[1] and not r.get("pdf_fetched_at"):
+            r["pdf_fetched_at"] = mm[1]
+            stats["fetched_added"] += 1
     rows.append(r)
 
 tmp = DIARIES + ".tmp"
