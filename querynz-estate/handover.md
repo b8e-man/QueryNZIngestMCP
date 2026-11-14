@@ -1,6 +1,6 @@
 # Handover — Query NZ estate channel + news fleet (LIVING DOC)
 
-Last updated: 2026-11-14T21:39Z (UTC).
+Last updated: 2026-11-14T23:20Z (UTC).
 
 Audience: a model picking this up cold to review or take over the work. Everything below is
 verified against logs/ledgers (paths given); nothing here is aspirational.

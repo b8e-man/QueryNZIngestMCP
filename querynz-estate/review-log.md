@@ -78,3 +78,38 @@ the agent iteration cap mid-pipeline — the two agents' work is joined below)
 4. False-alarm discipline: when the watchdog logs "was down and restart
    FAILED" seconds after a restart, that is the minutes-long corpus load —
    poll /health, never start a second instance.
+
+## Pass 2026-11-15 (mimo): rearchitecture, on Arthur's "take the learnings
+you like and rearchitect as you see fit"
+
+### Changes made
+
+| what | files | why |
+|---|---|---|
+| Index core extracted from server.py into a dependency-light module | qnz-mcp/index.py (new, 595 lines) from server.py (1,727 -> 1,213) | the loader/seq semantics are the contract's heart and were untestable inside the monolith; split is the seam the next changes forced (compaction, fail-loud, tests all live there) |
+| Sidecar compaction at load (log -> effective state, atomic replace, seqs preserved) | index.py | sidecars are append-only logs with last-line-per-id semantics; parliament-diaries' had drifted to 3x effective (625,392 -> 208,464 lines compacted at first boot). State 182MB -> 151MB |
+| Fail-loud field resolution | index.py | id_field matching no row + no url now REFUSES to load (was: silent content-hash ids - the documented pitfall); id/date gaps warn loudly. All 40 real corpora pass clean (0 warnings) |
+| Per-corpus load timing to server.log ([load] lines) | index.py | the 9-minute startup was unattributed; now every boot reports where time goes |
+| Same-size-rewrite detection fixed (content sample: head/mid/tail fingerprint) | index.py | LATENT BUG FOUND: this FS returns identical st_mtime values for rewrites within one second, so a same-size same-second rewrite of a record file was invisible to the rebuild gate - silently stale index (measured 2026-11-15). Now caught by st_mtime_ns + a 3x256-byte sample |
+| Index contract battery (15 checks: seq stability, arrival order, tailing, dupe enrichment, compaction equivalence, fail-loud, glob re-expansion, capture/annotation blocks) | qnz-mcp/tests/test_index.py (new) | the served contract now has executable truth; plain asserts, no SDK, runs in ~1s |
+| Test seams (state_dir, compact_min_lines config knobs, defaults unchanged) | index.py | tests run against a sandbox without touching live state |
+
+### Verification
+
+- 15/15 contract tests pass; py_compile clean on all touched files.
+- Ship proof against the live instance: 40 corpora, schema_hash for every
+  corpus IDENTICAL pre/post restart, no record count shrank, live appends
+  continued through the window (+44), get/records/changes round-trips OK.
+- Load: kill 23:06:21 -> healthy 23:14:23 (8:21 wall incl. watchdog pickup);
+  actual load ~4.2 min summed from [load] lines vs ~8-9 min on the old code.
+  Hot spots now named: parliament-wayback 74.9s (docs pass), written-questions
+  33.6s (683K rows), beehive 20.3s.
+- Zero WARN lines on the real boot: all 40 corpus field configs are honest.
+
+### Issues found, not changed
+
+| issue | reason / next |
+|---|---|
+| parliament-wayback docs pass (74.9s) reads page files + strip_html at boot | lazy text extraction would cut it further; deferred - measured, not guessed at |
+| written-questions sidecar (683K lines) cannot compact (1:1 with ids) | append-only single-touch corpus; nothing to compact - the cost is the parse, not the log |
+| server.py remains 1,213 lines (tools + file delivery + channel) | three cohesive jobs left together deliberately; the next forced seam is file delivery if download/resources grow |
