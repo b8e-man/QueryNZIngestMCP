@@ -144,6 +144,17 @@ _CATEGORY_SEL = "span.cat-links"
 # textContent, meaningful if extract() is ever fed markup-bearing strings).
 _IFRAME_RE = re.compile(r"(?s)<iframe[^>]*>.*?</iframe>")
 
+# The Newsroom Pro sales block (estate-newsroom-pro-stubs@2026-11-18): a page
+# whose extracted text carries it is a Pro TEASER, not a body — the thin-row
+# test drops it as a stub (loud), the same standing rule as every other
+# outlet. Measured teaser 619-1,156 chars vs 4,018-11,941 for the same URLs
+# fetched under a live subscriber session (the session DOES unlock Pro).
+_PRO_SALES_MARKS = (
+    "Exclusive subscriber-only emails",
+    "Start 14-day free trial",
+    "Corporate subscriptions also available",
+)
+
 
 class _AllTags(frozenset):
     """bs4 >= 4.13 collapses whitespace-only text nodes to a single \\n unless
@@ -182,6 +193,10 @@ def extract(html: str, url: str) -> base.Extracted | None:
 
     text = _IFRAME_RE.sub("", content_el.get_text()).strip()
     if not text:
+        return None
+    if any(m in text for m in _PRO_SALES_MARKS):
+        # Newsroom Pro teaser, not a body — drop as thin, loud (stub rule).
+        print(f"  newsroom Pro teaser dropped as thin: {url}")
         return None
     title = " ".join(title_el.get_text().split())  # StringUtils.normalizeSpace
 
