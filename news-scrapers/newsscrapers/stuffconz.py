@@ -31,6 +31,7 @@ from bs4 import BeautifulSoup, Comment, Declaration, Doctype, NavigableString
 from bs4 import ProcessingInstruction, Tag
 
 from . import base
+from .stuffmasthead import _state_jar
 
 SOURCE = "stuff.co.nz"
 FEEDS = ["https://www.stuff.co.nz/rss"]
@@ -134,6 +135,23 @@ async def discover(client) -> list[base.FeedItem]:
                                            published_at=it.published_at))
         await asyncio.sleep(base.POLITE_SLEEP)
     return items
+
+
+async def fetch_all(urls: list[str]) -> list[tuple[str, str]]:
+    """run_source's auth hook: story-API fetches carrying the Stuff login
+    jar (logins adopted 2026-11-17 — captures land as a subscriber session;
+    bodies measured identical anon vs logged-in, the session rides anyway).
+    Plain-HTTP, like the rest of the story-API lanes — no browser."""
+    jar = _state_jar(SOURCE)
+    out: list[tuple[str, str]] = []
+    async with base.make_client(cookies=jar) as client:
+        for u in urls:
+            try:
+                out.append((u, (await base.fetch(client, u)).text))
+            except Exception as e:  # noqa: BLE001
+                print(f"  story fetch failed {u}: {type(e).__name__}: {e}")
+            await asyncio.sleep(base.POLITE_SLEEP)
+    return out
 
 
 def extract(html: str, url: str) -> base.Extracted | None:

@@ -50,10 +50,11 @@ REGISTRY: dict[str, Entry] = {
     "stuff.co.nz":        Entry("stuffconz", "news", "ready"),
     # Stuff-family login (Arthur, 2026-11-13): VERIFIED sign-in via
     # identity.stuff.co.nz (Azure B2C form: Email address + Password); session
-    # persisted /opt/data/evs-credentials/stuff_state.json. Meter insurance
-    # only — every fetch measured full-bodied anon so far (15/15 The Press,
-    # 20/20 NZH premium); wire it into the fetch path when a meter bite shows
-    # up as thin/stub rows (and flag the estate when it does).
+    # persisted /opt/data/evs-credentials/stuff_state.json. WEDDED TO THE
+    # FETCH PATH 2026-11-17 (Arthur: "adopt logins for everything") —
+    # every story-API fetch carries the subscriber session (provenance;
+    # bodies measured identical anon vs logged-in, 15/15 The Press). Mint or
+    # refresh per-host states with ingestion/scripts/stuff_login.py.
     # The Press (Christchurch, Stuff masthead) — added 2026-11-13 on Arthur's
     # word ("Do it"), OUTSIDE the estate's 87-source media list; told to the
     # estate under hermes-thepress@2026-11-13. Stuff masthead SPA + open story

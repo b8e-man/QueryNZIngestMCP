@@ -13,8 +13,11 @@ Platform facts (all measured):
   index — The Press's on-site archive runs back to 2023-12-13 (measured).
 - COMPLETENESS: the "subscriber-only" wall (Stuff, April 2023) is client-side
   Piano only. Story API bodies measured IDENTICAL anon vs a verified logged-in
-  session (15/15 The Press); no entitlement field exists on the record. A
-  page that ever serves a stub drops as thin and the estate gets flagged
+  session (15/15 The Press); no entitlement field exists on the record.
+  SINCE 2026-11-17 LOGINS ADOPTED (Arthur: "adopt logins for everything") —
+  fetch_all sends the persisted Stuff session so captures land as a
+  subscriber, provenance first. A page that ever serves a stub drops as thin
+  and the estate gets flagged
   (standing rule). Just-published stories can race with an empty body (seen
   once on the-post) — thin rule drops them; the next tick re-fetches.
 - The regional papers 301 into sections of these three sites (nelsonmail ->
@@ -29,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 from types import SimpleNamespace
 
@@ -40,6 +44,36 @@ _ID_RE = re.compile(r"/(\d{6,})/")
 POLITE_SLEEP = 2.0
 FETCH_CHUNK = 50
 _ROOT = "https" + chr(58) + chr(47) + chr(47) + "www."   # filter-safe assembly
+
+_STATE_PATH = os.environ.get("STUFF_STATE_PATH",
+                             "/opt/data/evs-credentials/stuff_state.json")
+
+
+def _state_jar(host: str) -> dict[str, str]:
+    """Persisted Stuff login cookies (Playwright storage state) for `host`.
+
+    LOGINS ADOPTED ON EVERY FETCH PATH (Arthur, 2026-11-17: "adopt logins
+    for everything"). Bodies are captured as a signed-in subscriber session,
+    never anonymous — provenance is the point, regardless of what an
+    anonymous fetch happens to serve. Mint/refresh per-host states with
+    scripts/stuff_login.py. Missing state is LOUD, never silent.
+    """
+    try:
+        with open(_STATE_PATH) as fh:
+            state = json.load(fh)
+    except (FileNotFoundError, ValueError):
+        print(f"  stuff login state missing/unreadable ({_STATE_PATH}) — "
+              "run scripts/stuff_login.py; fetching WITHOUT session")
+        return {}
+    jar: dict[str, str] = {}
+    for c in state.get("cookies", []):
+        d = (c.get("domain") or "").lstrip(".")
+        if d == host or host.endswith("." + d) or d.endswith("." + host):
+            jar[c["name"]] = c["value"]
+    if not jar:
+        print(f"  no {host} cookies in stuff login state — "
+              "run scripts/stuff_login.py; fetching WITHOUT session")
+    return jar
 
 
 def extract(html: str, url: str):
@@ -102,9 +136,13 @@ def make(host: str, masthead: str):
 
     async def fetch_all(urls: list[str]) -> list[tuple[str, str]]:
         """run_source's fetch hook: story JSON per article URL (id from the
-        URL), paced at POLITE_SLEEP. Anonymous — measured complete."""
+        URL), paced at POLITE_SLEEP. LOGGED-IN (logins adopted 2026-11-17)
+        — captures land as a subscriber session. (Bodies were measured
+        identical anon vs logged-in 15/15; the session rides along anyway:
+        provenance, and readiness if the meter ever tightens.)"""
         out: list[tuple[str, str]] = []
-        async with base.make_client() as client:
+        jar = _state_jar(host)
+        async with base.make_client(cookies=jar) as client:
             for u in urls:
                 m = _ID_RE.search(u)
                 if not m:

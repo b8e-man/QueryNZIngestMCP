@@ -149,10 +149,11 @@ async def verify_sessions() -> dict:
                             "stale/empty cookie cache (re-login needed)")
     except (FileNotFoundError, ValueError):
         out["nbr.co.nz"] = "no cookie cache (login needed)"
-    # Stuff: session state held as meter insurance (anon path measured equal)
-    out["stuff.co.nz"] = ("ok (insurance; anon==logged-in measured 15/15)"
-                          if os.path.exists("/opt/data/evs-credentials/stuff_state.json")
-                          else "no state file")
+    # Stuff: session state is ON the fetch path since 2026-11-17 (logins
+    # adopted everywhere) — ok = state file exists AND covers the host
+    jar_ok = os.path.exists("/opt/data/evs-credentials/stuff_state.json")
+    out["stuff.co.nz"] = ("ok (login on fetch path)"
+                          if jar_ok else "no state file — run stuff_login.py")
     # NZME: anonymous only — creds rejected + parked
     out["nzherald.co.nz"] = "anonymous (creds rejected/parked — not retried)"
     return out
