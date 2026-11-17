@@ -28,6 +28,9 @@ it only produces the text we STORE; nothing is extracted into the graph.
 """
 from __future__ import annotations
 
+import asyncio
+import json
+import os
 import re
 
 from . import base, genericrss
@@ -67,12 +70,11 @@ _LATEST = ("https://www.nzherald.co.nz/arc/outboundfeeds/sitemap/latest/"
 # an NZME article URL ends in a 26-char Arc id. /premium/ was dropped at
 # discovery until 2026-11-13 (robots-disallowed + assumed paywalled) — then
 # MEASURED: 20 of 20 premium URLs in the latest sitemap served FULL bodies to
-# a plain anonymous fetch (550-14,842 chars; a login cookie jar changes
-# nothing server-side). Arthur's word stands behind the login route (creds
-# handed over 2026-11-13 = proceed on robots politely). Premium is now
-# accepted in BOTH paths and lands as served at the lane's polite pace. The
-# login itself is parked: nzme.env creds were rejected by the identity
-# service ("password or email address is incorrect", one attempt, held).
+# a plain anonymous fetch (550-14,842 chars). Premium is accepted in BOTH
+# paths and lands at the lane's polite pace. LOGIN ON THE FETCH PATH since
+# 2026-11-17 ("adopt logins for everything"): the account password was fixed
+# and the one authorised retry minted a subscriber session
+# (ingestion/scripts/nzme_login.py) — captures land as a subscriber.
 # _ARC_TAIL is THE one Arc-id rule — the fresh path (_ARTICLE) and the archive
 # path (ARCHIVE["article_re"]) both build from it, so they cannot drift apart
 # (2026-08-30, the edited-together hazard folded; test_nzme_predicate pins the
@@ -111,6 +113,53 @@ def make_discover(site: str = WEBSITE):
 
 discover = make_discover(WEBSITE)
 extract = genericrss.extract
+
+_STATE_PATH = os.environ.get("NZME_STATE_PATH",
+                             "/opt/data/evs-credentials/nzme_state.json")
+
+
+def _state_jar() -> dict[str, str]:
+    """Persisted NZME login cookies for nzherald.co.nz.
+
+    LOGINS ADOPTED ON EVERY FETCH PATH (Arthur, 2026-11-17: "adopt logins
+    for everything"; retry authorised the same day after the account
+    password was fixed — login minted via ingestion/scripts/nzme_login.py).
+    Captures land as a subscriber session — provenance first. Missing state
+    is LOUD, never silent. (The ruling-115 HOLD is unchanged: captured,
+    never extracted/embedded.)
+    """
+    try:
+        with open(_STATE_PATH) as fh:
+            state = json.load(fh)
+    except (FileNotFoundError, ValueError):
+        print(f"  nzme login state missing/unreadable ({_STATE_PATH}) — "
+              "run ingestion/scripts/nzme_login.py; fetching WITHOUT session")
+        return {}
+    jar: dict[str, str] = {}
+    for c in state.get("cookies", []):
+        d = (c.get("domain") or "").lstrip(".")
+        if d == "nzherald.co.nz" or "nzherald.co.nz".endswith("." + d) \
+                or d.endswith(".nzherald.co.nz"):
+            jar[c["name"]] = c["value"]
+    if not jar:
+        print(f"  no nzherald.co.nz cookies in nzme login state — "
+              "run ingestion/scripts/nzme_login.py; fetching WITHOUT session")
+    return jar
+
+
+async def fetch_all(urls: list[str]) -> list[tuple[str, str]]:
+    """run_source's auth hook: article fetches carrying the NZME login jar
+    (logins adopted 2026-11-17 — captures land as a subscriber session)."""
+    jar = _state_jar()
+    out: list[tuple[str, str]] = []
+    async with base.make_client(cookies=jar) as client:
+        for u in urls:
+            try:
+                out.append((u, (await base.fetch(client, u)).text))
+            except Exception as e:  # noqa: BLE001
+                print(f"  nzme fetch failed {u}: {type(e).__name__}: {e}")
+            await asyncio.sleep(POLITE_SLEEP)
+    return out
 
 # the 14 mastheads, each its own Arc outbound feed (robots.txt Sitemap: lines).
 MASTHEADS = ("nzh", "viva", "bay-of-plenty-times", "hawkes-bay-today",

@@ -154,8 +154,16 @@ async def verify_sessions() -> dict:
     jar_ok = os.path.exists("/opt/data/evs-credentials/stuff_state.json")
     out["stuff.co.nz"] = ("ok (login on fetch path)"
                           if jar_ok else "no state file — run stuff_login.py")
-    # NZME: anonymous only — creds rejected + parked
-    out["nzherald.co.nz"] = "anonymous (creds rejected/parked — not retried)"
+    # NZME: login on the fetch path since 2026-11-17 (retry authorised after
+    # the account password was fixed) — ok = state file has host cookies
+    try:
+        nz = json.load(open("/opt/data/evs-credentials/nzme_state.json"))
+        nzme_jar_ok = any("nzherald.co.nz" in (c.get("domain") or "")
+                          for c in nz.get("cookies", []))
+    except (FileNotFoundError, ValueError):
+        nzme_jar_ok = False
+    out["nzherald.co.nz"] = ("ok (login on fetch path)"
+                             if nzme_jar_ok else "no state file — run nzme_login.py")
     return out
 
 
