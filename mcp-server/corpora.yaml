@@ -515,7 +515,7 @@ corpora:
     freshness_sla_hours: 720
 
   estate-news:
-    label: "NZ news outlets, raw page captures (news-scrapers, 67 outlets; NZME from 2026-10-17/18 collected + raw-served like every outlet (ruling 169, collect decision confirmed 2026-11-12); only extraction/embedding withheld (terms, ruling 115))"
+    label: "NZ news outlets, raw page captures (news-scrapers, 67 outlets; NZME from 2026-10-17/18 collected + raw-served like every outlet (ruling 169, collect decision confirmed 2026-11-12); only extraction/embedding withheld (terms, ruling 115)). From 2026-11-20 also author/profile pages: kind=author_page | author_index rows carrying reached_from (ask estate-news-authors-2026-11-15)"
     source_category: news-media
     kind: records
     id_field: sha256
@@ -531,6 +531,37 @@ corpora:
     # records always land at the end of the feed.
     record_file: /opt/data/news-scrapers/data/*/manifest.jsonl
     path_root: /opt/data/news-scrapers/data
+    freshness_sla_hours: 24
+
+  estate-comments:
+    label: "Reader comments on estate-news articles — one record per thread capture (raw response whole + deterministic per-comment parse, comment_system wordpress|coral|openweb|disqus|other); forward only from 2026-11-18, falling re-captures d1/3/7/30 (ask estate-news-comments@2026-11-18)"
+    source_category: news-media
+    kind: records
+    id_field: record_id
+    date_field: [captured_at, published_at]
+    title_field:
+      - article
+    text_fields: [article, comments]
+    file_fields: [file]
+    doc_type_field: comment_system
+    record_file: /opt/data/news-scrapers/data-comments/*/manifest.jsonl
+    path_root: /opt/data/news-scrapers/data-comments
+    freshness_sla_hours: 24
+
+  estate-substack:
+    label: "13 NZ Substack newsletters — free post JSON whole + comments whole (fields as Substack serves them) + archive listings listing paid posts not held; forward only from 2026-11-18, falling comment re-captures d1/3/7/30 (ask estate-substack@2026-11-18)"
+    source_category: newsletter
+    kind: records
+    id_field: record_id
+    date_field: [published_at, captured_at]
+    title_field:
+      - title
+      - post
+    text_fields: [title, comments]
+    file_fields: [file]
+    doc_type_field: kind
+    record_file: /opt/data/news-scrapers/data-substack/*/manifest.jsonl
+    path_root: /opt/data/news-scrapers/data-substack
     freshness_sla_hours: 24
 
   estate-tenders:

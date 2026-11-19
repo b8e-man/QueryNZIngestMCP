@@ -104,6 +104,32 @@ def _file_uri(corpus: str, r: dict):
     return f"qnz-{_family(r)}://{corpus}/{r['seq']}"
 
 
+def _strip_text_deep(v):
+    """include_text=false at any depth: drop named text fields and any
+    string beyond the length threshold, recursively (rule 2026-11-09:
+    comment bodies live INSIDE comments[] dicts — a top-level-only filter
+    still ships them)."""
+    if isinstance(v, str):
+        return None if len(v) > 300 else v
+    if isinstance(v, dict):
+        out = {}
+        for k, x in v.items():
+            if k in TEXT_FIELD_KEYS:
+                continue
+            y = _strip_text_deep(x)
+            if y is not None:
+                out[k] = y
+        return out
+    if isinstance(v, list):
+        out = []
+        for x in v:
+            y = _strip_text_deep(x)
+            if y is not None:
+                out.append(y)
+        return out
+    return v
+
+
 def _rec_out(r: dict, include_text: bool = True,
              corpus: str | None = None) -> dict:
     out = {"seq": r["seq"], "id": r["id"], **r["fields"]}
@@ -125,11 +151,14 @@ def _rec_out(r: dict, include_text: bool = True,
     if include_text:
         out["text"] = r["fields"].get("text") or r["text"]
         return out
-    # metadata-only pass: the database's texts stay behind
+    # metadata-only pass: the database's texts stay behind — top level
+    # AND inside list/dict fields (comments[] bodies, nested html)
     for k in list(out):
         v = out[k]
         if k in TEXT_FIELD_KEYS or (isinstance(v, str) and len(v) > 300):
             del out[k]
+        elif isinstance(v, (dict, list)):
+            out[k] = _strip_text_deep(v)
     return out
 
 
