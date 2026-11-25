@@ -52,6 +52,18 @@ def _seeded(name):
     return [u.strip() for u in open(pp) if u.strip()] if os.path.exists(pp) else []
 
 SURFACES = {
+    "worksafe": {
+        # Imperva block shell keyed to the runtime's egress IP (measured
+        # 2026-11-25); Arthur's browser-lane lift 2026-11-25. Listings AND
+        # item pages ride page_re (landed by hash = the freshness record).
+        "starts": [
+            "https://www.worksafe.govt.nz/laws-and-regulations/prosecutions/court-summaries/",
+            "https://www.worksafe.govt.nz/laws-and-regulations/enforceable-undertakings/accepted-enforceable-undertakings/",
+        ],
+        "page_re": r"worksafe\.govt\.nz/laws-and-regulations/(prosecutions/court-summaries|enforceable-undertakings/accepted-enforceable-undertakings)/",
+        "file_re": r"\.(pdf|xlsx?|csv)(\?|$)",
+        "depth": 3,
+    },
     "fma": {
         "starts": ["https://www.fma.govt.nz/library/warnings-and-alerts/",
                    "https://www.fma.govt.nz/about-us/enforcement/cases/"],
@@ -73,10 +85,19 @@ SURFACES = {
     "councillor_interests": {
         "starts": [
             "https://www.dunedin.govt.nz/council/governance/elected-members/registers-of-interests",
-            "https://www.gdc.govt.nz/council/mayor-and-councillors/Registers-of-Interest",
             "https://www.kaipara.govt.nz/council/elected-members/registers-of-interest",
         ],
-        "page_re": r"(dunedin|gdc\.govt|kaipara)\.govt\.nz/.*(interest|pecuniary|register)",
+        # tightened 2026-11-25 (labels-are-contract): the old word matching
+        # ("interest|pecuniary|register") landed dog-registration,
+        # registered-premises and road-name-register pages into the register
+        # corpus (42 rows quarantined 2026-11-25). Walk only register pages;
+        # file links under them still expand via file_re. The Gisborne
+        # (gdc.govt.nz) seed is REMOVED: that address has only ever answered
+        # a 404 page and the council does not publish the register online
+        # (site search 0 results for 'pecuniary', 2026-11-25) — see
+        # gaps/councillor_interests.jsonl and the reply
+        # hermes-interests-gisborne@2026-11-25. Re-add if they publish.
+        "page_re": r"(registers?-of-interest|pecuniary-interest)",
         "file_re": r"\.(pdf|xlsx?|csv)(\?|$)",
         "depth": 2,
     },

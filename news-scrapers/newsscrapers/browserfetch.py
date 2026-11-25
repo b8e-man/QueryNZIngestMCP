@@ -41,7 +41,17 @@ _CHALLENGE_MARKERS = (
 
 def is_challenge(html: str) -> bool:
     """True when this body is an interstitial rather than the page asked for."""
-    return any(m in (html or "") for m in _CHALLENGE_MARKERS)
+    h = (html or "").lower()
+    # The _incapsula_resource marker ALONE is not a signal: a solved real page
+    # carries the script tag too (measured worksafe.govt.nz 2026-11-25: a
+    # 388 KB real article was discarded as challenged because the real page
+    # references /_Incapsula_Resource). The bare interstitial and the block
+    # shell carry the robots NOINDEX,NOFOLLOW stamp (lower- or upper-case —
+    # the shell serves it upper-case); real pages do not (verified on
+    # worksafe + ecan stubs vs worksafe real pages).
+    if "_incapsula_resource" in h and "noindex,nofollow" in h:
+        return True
+    return any(m in h for m in _CHALLENGE_MARKERS[1:])
 
 
 async def fetch_raw(urls: list[str], *, timeout_ms: int = 60_000,
@@ -66,10 +76,26 @@ async def fetch_raw(urls: list[str], *, timeout_ms: int = 60_000,
                                            proxy=proxies.playwright_proxy(source))
         ctx = await browser.new_context(user_agent=_UA)
         page = await ctx.new_page()
+
+        async def raw_get(url: str):
+            """The raw body via the request API, minus analytics cookies.
+            After a solved navigation the context carries the page's tracking
+            cookies too and the cookie header overflows (measured worksafe
+            2026-11-25: 'Parse Error: Header overflow' on the post-solve
+            re-read). Wall/session cookies (incap_*, cf_clearance, logins)
+            are kept — only analytics bloat is dropped."""
+            cookies = await ctx.cookies()
+            drop = ("_ga", "_gid", "_gat", "_gcl", "_fbp", "_hj", "hj",
+                    "mp_", "ajs_", "_uet", "_mkto", "nmstat", "IR_PI")
+            keep = "; ".join(f"{c['name']}={c['value']}" for c in cookies
+                             if not c["name"].startswith(drop))
+            return await ctx.request.get(url, timeout=timeout_ms,
+                                         headers={"cookie": keep} if keep else {})
+
         try:
             for url in urls:
                 try:
-                    r = await ctx.request.get(url, timeout=timeout_ms)
+                    r = await raw_get(url)
                     body = await r.text()
                     if is_challenge(body):
                         await page.goto(url, wait_until="domcontentloaded",
@@ -83,7 +109,7 @@ async def fetch_raw(urls: list[str], *, timeout_ms: int = 60_000,
                             print(f"  CHALLENGED (a challenged read is a "
                                   f"failed read): {url}")
                             continue
-                        r = await ctx.request.get(url, timeout=timeout_ms)
+                        r = await raw_get(url)
                         body = await r.text()
                         if is_challenge(body):
                             print(f"  CHALLENGED (a challenged read is a "

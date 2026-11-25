@@ -136,25 +136,17 @@ def make_opener(proxied):
 
 
 class BrowserFetcher:
-    """chromium + the IPRoyal session. The Commission's sites serve Incapsula
-    JS interstitials to plain fetchers (measured 2026-11-13); the interstitial
-    resolves itself once its own _Incapsula_Resource script runs — the beehive
-    recipe (chromium + proxy, block JS except _Incapsula_Resource). Documents
-    go through the shared-cookie request context. Playwright only."""
-
-    def __init__(self, proxied):
+    """Headed chromium on a DIRECT connection — the estate's own working
+    recipe (the candidate_returns lane reads these sites with it daily;
+    measured 2026-11-25: headless + the residential exit draws the Incapsula
+    interstitial and it will not self-solve even at a 40s window, while this
+    recipe reads clean). The interstitial self-solve below stays as the
+    fallback semantics: a challenge that will not clear is a failed read —
+    never defeated, solved or answered. Playwright only."""
+    def __init__(self, proxied=False):
         from playwright.sync_api import sync_playwright
         self._pw = sync_playwright().start()
-        parts = _proxy_parts(proxied)
-        proxy = None
-        if parts:
-            user, pw, hostport = parts
-            # Playwright wants credential fields — embedded creds hang
-            # Page.goto (measured 2026-11-09, proxies.py).
-            proxy = {"server": "http" + chr(58) + chr(47) + chr(47) + hostport,
-                     "username": user, "password": pw}
-        self._b = self._pw.chromium.launch(headless=True, args=_LAUNCH_ARGS,
-                                           proxy=proxy)
+        self._b = self._pw.chromium.launch(headless=False, args=_LAUNCH_ARGS)
         self._ctx = self._b.new_context(user_agent=BUA)
         self.page = self._ctx.new_page()
 
@@ -198,7 +190,10 @@ class BrowserFetcher:
                                timeout=timeout * 1000)
             except Exception:
                 pass
-            for _ in range(6):
+            # 20 rounds: a 12s (6x2s) window is insufficient on headless
+            # chromium to let the interstitial's own script resolve (measured
+            # on worksafe 2026-11-25 — 20 rounds needed there).
+            for _ in range(20):
                 if not self._is_shell(self.page.content()):
                     break
                 time.sleep(2)
@@ -607,6 +602,36 @@ class Runner:
             "skipped_held": 0, "skipped_dup": 0, "skipped_disallowed": 0,
             "errors": 0, "blocked": False})
 
+    def _record_failed(self, url, listing, listed_meta):
+        """Keep the queue entry (listing context included) so a wave can
+        re-ask exactly once, later. The gap ledger is the durable history;
+        this is the retry source."""
+        self.state.setdefault("failed", []).append([url, listing, listed_meta])
+
+    def wave_reset(self):
+        """One re-attempt wave (committed EC waves 11-24 / 12-01 / 12-08).
+        Re-queues every failed read once — a listed URL is never re-hammered
+        inside a run; the wave IS the spaced re-ask — and re-sweeps listing
+        pages so new documents surface. Documents already held skip by
+        address/name/sha on the walk. Terminal by ruling (held, never,
+        disallowed, offsite) stay put."""
+        requeued = 0
+        for entry in self.state.get("failed", []):
+            k = norm_addr(entry[0])
+            if k not in self.state["visited"]:
+                self.state["queued"].append(entry)
+                requeued += 1
+        self.state["failed"] = []
+        for k, st in list(self.state["visited"].items()):
+            url = SCHEME + k
+            retryable = st in ("challenge", "challenge-page") or str(st).startswith("error:")
+            page_sweep = st == "fetched" and not last_part(url).endswith(DOC_EXTS)
+            if retryable or page_sweep:
+                del self.state["visited"][k]
+                self.state["queued"].append([url, None, None])
+                requeued += 1
+        print("wave: %d URLs re-queued" % requeued)
+
     def enqueue(self, url, listing, meta=None):
         n = norm_addr(url)
         if n not in self.state["visited"]:
@@ -621,6 +646,8 @@ class Runner:
     def run(self):
         deadline = time.time() + self.args.max_seconds
         fetches = 0
+        if getattr(self.args, "wave", False):
+            self.wave_reset()
         self.seed()
         while self.state["queued"] and fetches < self.args.max_fetches \
                 and time.time() < deadline and not self.blocked:
@@ -664,11 +691,13 @@ class Runner:
                 if e.kind == "challenge":
                     st["challenged"] = st.get("challenged", 0) + 1
                     self.state["visited"][n] = "challenge"
+                    self._record_failed(url, listing, listed_meta)
                     log_gap(host, url, "challenge", e.status)
                     time.sleep(15)     # cool down — go slow
                     continue
                 st["errors"] += 1
                 self.state["visited"][n] = "error:%s" % e.kind
+                self._record_failed(url, listing, listed_meta)
                 log_gap(host, url, "error", e.status, note=e.kind)
                 if self.args.proxy and e.kind.startswith("io"):
                     self._io_errors += 1
@@ -682,6 +711,7 @@ class Runner:
             if looks_like_challenge(data):
                 st["challenged"] = st.get("challenged", 0) + 1
                 self.state["visited"][n] = "challenge-page"
+                self._record_failed(url, listing, listed_meta)
                 log_gap(host, url, "challenge-page")
                 time.sleep(15)     # cool down — go slow
                 continue
@@ -768,6 +798,8 @@ def main():
                     help="route through one IPRoyal residential session (unblocker)")
     ap.add_argument("--browser", action="store_true",
                     help="fetch via headless chromium (Incapsula interstitials)")
+    ap.add_argument("--wave", action="store_true",
+                    help="one re-attempt wave: re-queue failed reads + re-sweep listing pages")
     args = ap.parse_args()
     # single-instance lock
     import fcntl

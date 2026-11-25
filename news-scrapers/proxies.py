@@ -28,6 +28,9 @@ PROXIED_SOURCES = {
     "ecan.govt.nz",
     "crux.org.nz",
     "royalsociety.org.nz",   # 403 direct both UAs, 200 via exit (2026-11-09)
+    "worksafe.govt.nz",      # Incapsula block shell keyed to this runtime's
+                             # egress IP (cip=… incident-id shell, measured
+                             # 2026-11-25); serves fine to a fresh identity
 }
 
 _SESSIONS: dict[str, str] = {}  # source -> this run's proxy url

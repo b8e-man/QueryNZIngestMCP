@@ -4,9 +4,9 @@
 # Watchdog convention: silent when nothing landed; the run report when it did
 # or when the site blocked us.
 set -u
-OUT=$(PLAYWRIGHT_BROWSERS_PATH=/opt/data/.cache/ms-playwright \
+OUT=$(DISPLAY=:99 PLAYWRIGHT_BROWSERS_PATH=/opt/data/.cache/ms-playwright \
   /opt/data/news-scrapers/.venv/bin/python /opt/data/scripts/collect_electoral.py \
-  --proxy --browser --max-fetches 150 --max-seconds 1200 2>&1)
+  --browser --max-fetches 150 --max-seconds 1200 2>&1)
 RC=$?
 if [ "$RC" -ne 0 ]; then
   echo "collect_electoral tick exited $RC:"

@@ -109,8 +109,8 @@ provenance).
 
 Records carry the database's own fields (url/title, dates, ministers,
 portfolios, body text, topics, quotes, question/bill/diary/case fields —
-whatever the corpus holds) plus `seq` (the arrival-order position — the
-cursor anchor) and `id`. Capture provenance (hashes, fetch timestamps, HTTP
+whatever the corpus holds) plus `seq` (the stable arrival-order number,
+never reused; withdrawals leave holes — the cursor anchor) and `id`. Capture provenance (hashes, fetch timestamps, HTTP
 status, raw-file paths) is exposed in a `capture` block; model-made fields
 are named in an `annotation` block with their generator. `updated_at` moves
 when a record is re-processed. Corpora that declare a `path_root` also carry

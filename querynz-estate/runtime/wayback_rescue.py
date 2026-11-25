@@ -54,6 +54,12 @@ SURFACES = {
         ("www.communitymatters.govt.nz/*", "original:.*(grant|record|lottery|cogs).*"),
         ("communitymatters.govt.nz/*", "original:.*(grant|record|lottery|cogs).*"),
     ],
+    "tenancy_tribunal": [
+        # the TTV2 order PDFs: the live PDF route closes every connection
+        # since 2026-10-25 (plain, residential AND browser - measured
+        # 2026-11-25); the archive holds copies (CDX verified)
+        ("forms.justice.govt.nz/search/Documents/TTV2/PDF/*", None),
+    ],
 }
 
 
